@@ -1,0 +1,56 @@
+name: fyp_neobanking
+description: AI-Powered Personal Finance Advisor — FYP by Lau Zheng Cheng (TP071393)
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Supabase — database and authentication
+  supabase_flutter: ^2.3.0
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.3
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # QR Code scanning
+  mobile_scanner: ^5.1.0
+
+  # QR Code generation
+  qr_flutter: ^4.1.0
+
+  # Push notifications
+  flutter_local_notifications: ^17.1.2
+
+  # HTTP requests to Node.js backend
+  dio: ^5.4.3+1
+
+  # Secure storage for tokens
+  flutter_secure_storage: ^9.0.0
+
+  # UI utilities
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  fl_chart: ^0.67.0
+
+  # Icons
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.9
+
+flutter:
+  uses-material-design: true
