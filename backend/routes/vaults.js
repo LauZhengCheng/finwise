@@ -1,20 +1,25 @@
 // ============================================
-// Programmer : Lau Zheng Cheng (TP071393)
-// Program Name : vaults.js
-// Description : Handle vaults routes for FYP Neobanking
+// Programmer    : Lau Zheng Cheng (TP071393)
+// Program Name  : vaults.js
+// Description   : Vault routes — Active Pilot transfer
 // First Written : 21-May-2026
-// Edited on : 21-May-2026
+// Edited on     : 06-06-2026
 // ============================================
 
-//load Express framework
 const express = require('express');
 const router = express.Router();
+const authenticateUser = require('../middleware/auth');
+const { transferVault } = require('../controllers/vaultController');
 
-//health check endpoint to verify vaults route is working
 router.get('/status', (req, res) => {
-    //send JSON response back to frontend/client
-    res.json({ success: true, message: 'Vaults route working' });
+  res.json({ success: true, message: 'Vaults route working' });
 });
 
-//export router for use in other files
+// POST /api/vaults/transfer
+// Active Pilot: move money between vaults
+router.post('/transfer',
+  (req, res, next) => authenticateUser(req, res, next),
+  (req, res) => transferVault(req, res)
+);
+
 module.exports = router;
