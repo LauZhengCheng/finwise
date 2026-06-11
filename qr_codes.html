@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinWise — Simulated QR Codes</title>
+
+  <!--
+    QRCode.js library — takes any text string and draws it as a QR image.
+    Loaded from jsDelivr CDN. No server needed — runs entirely in your browser.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      padding: 24px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      color: #202124;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #5f6368;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    /* Section headers */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #5f6368;
+      text-transform: uppercase;
+      margin: 28px 0 12px;
+      padding-left: 4px;
+    }
+
+    /* Card grid — 4 cards per row on wide screens */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    /* Individual QR card */
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+
+    .card.salary {
+      border: 2px solid #34a853;
+      background: #f0faf3;
+    }
+
+    /* Category badge above the QR */
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+
+    .badge.food       { background: #fce8e6; color: #c5221f; }
+    .badge.transport  { background: #e8f0fe; color: #1a73e8; }
+    .badge.entertain  { background: #fef7e0; color: #b06000; }
+    .badge.shopping   { background: #f3e8fd; color: #7627bb; }
+    .badge.health     { background: #e6f4ea; color: #137333; }
+    .badge.education  { background: #e8f0fe; color: #1967d2; }
+    .badge.large      { background: #fce8e6; color: #b31412; }
+    .badge.salary     { background: #e6f4ea; color: #137333; }
+
+    /* The div where QRCode.js draws the QR image */
+    .qr-container {
+      width: 160px;
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qr-container canvas, .qr-container img {
+      border-radius: 8px;
+    }
+
+    /* Merchant name below QR */
+    .merchant-name {
+      margin-top: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #202124;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    /* Default amount */
+    .amount {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    .amount.salary-tag {
+      color: #137333;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>FinWise Simulated QR Codes</h1>
+  <p class="subtitle">Open this page on your laptop browser and scan with your phone running the FinWise app.</p>
+
+  <!--
+    We build the cards with JavaScript below.
+    Each section header + grid is inserted dynamically.
+  -->
+  <div id="root"></div>
+
+  <script>
+    /*
+      STEP 1 — Define all 20 QR entries.
+
+      Each entry has:
+        name    — displayed on the card
+        payload — the EXACT string that gets encoded into the QR code.
+                  This matches qr_payload in the Supabase merchant_qr_codes table.
+        amount  — label shown on card (null for salary)
+        badge   — CSS class for the category badge
+        label   — human-readable category name
+        salary  — true only for the salary QR (changes card styling)
+    */
+    const qrData = [
+      // ── FOOD & DINING ───────────────────────────────────────────────
+      {
+        section: 'Food & Dining',
+        items: [
+          { name: "McDonald's Sunway Pyramid", amount: 'RM 15.90', badge: 'food', label: 'Food',
+            payload: '{"merchant_name":"McDonald\'s Sunway Pyramid","merchant_id":"SIM-MCF-001","default_amount":15.90}' },
+          { name: 'KFC IOI City Mall', amount: 'RM 18.50', badge: 'food', label: 'Food',
+            payload: '{"merchant_name":"KFC IOI City Mall","merchant_id":"SIM-KFC-001","default_amount":18.50}' },
+          { name: 'Tealive Mid Valley', amount: 'RM 9.90', badge: 'food', label: 'Food',
+            payload: '{"merchant_name":"Tealive Mid Valley","merchant_id":"SIM-TEA-001","default_amount":9.90}' },
+          { name: 'GrabFood Delivery', amount: 'RM 35.00', badge: 'food', label: 'Food',
+            payload: '{"merchant_name":"GrabFood Delivery","merchant_id":"SIM-GRF-001","default_amount":35.00}' },
+          { name: 'Village Grocer Bangsar', amount: 'RM 85.00', badge: 'food', label: 'Food',
+            payload: '{"merchant_name":"Village Grocer Bangsar","merchant_id":"SIM-VGR-001","default_amount":85.00}' },
+        ]
+      },
+
+      // ── TRANSPORT ───────────────────────────────────────────────────
+      {
+        section: 'Transport',
+        items: [
+          { name: 'Shell Petrol Station PJ', amount: 'RM 80.00', badge: 'transport', label: 'Transport',
+            payload: '{"merchant_name":"Shell Petrol Station PJ","merchant_id":"SIM-SHL-001","default_amount":80.00}' },
+          { name: 'Grab Transport', amount: 'RM 18.00', badge: 'transport', label: 'Transport',
+            payload: '{"merchant_name":"Grab Transport","merchant_id":"SIM-GRB-001","default_amount":18.00}' },
+          { name: 'Touch n Go Reload', amount: 'RM 50.00', badge: 'transport', label: 'Transport',
+            payload: '{"merchant_name":"Touch n Go Reload","merchant_id":"SIM-TNG-001","default_amount":50.00}' },
+        ]
+      },
+
+      // ── ENTERTAINMENT ────────────────────────────────────────────────
+      {
+        section: 'Entertainment',
+        items: [
+          { name: 'TGV Cinemas 1 Utama', amount: 'RM 25.00', badge: 'entertain', label: 'Entertainment',
+            payload: '{"merchant_name":"TGV Cinemas 1 Utama","merchant_id":"SIM-TGV-001","default_amount":25.00}' },
+          { name: 'Steam Online Gaming', amount: 'RM 60.00', badge: 'entertain', label: 'Entertainment',
+            payload: '{"merchant_name":"Steam Online Gaming","merchant_id":"SIM-STM-001","default_amount":60.00}' },
+          { name: 'Spotify Premium', amount: 'RM 17.90', badge: 'entertain', label: 'Entertainment',
+            payload: '{"merchant_name":"Spotify Premium","merchant_id":"SIM-SPT-001","default_amount":17.90}' },
+        ]
+      },
+
+      // ── SHOPPING ─────────────────────────────────────────────────────
+      {
+        section: 'Shopping',
+        items: [
+          { name: 'H&M Pavilion KL', amount: 'RM 120.00', badge: 'shopping', label: 'Shopping',
+            payload: '{"merchant_name":"H&M Pavilion KL","merchant_id":"SIM-HNM-001","default_amount":120.00}' },
+          { name: 'Uniqlo Suria KLCC', amount: 'RM 150.00', badge: 'shopping', label: 'Shopping',
+            payload: '{"merchant_name":"Uniqlo Suria KLCC","merchant_id":"SIM-UNQ-001","default_amount":150.00}' },
+        ]
+      },
+
+      // ── HEALTH ───────────────────────────────────────────────────────
+      {
+        section: 'Health',
+        items: [
+          { name: 'Caring Pharmacy SS2', amount: 'RM 45.00', badge: 'health', label: 'Health',
+            payload: '{"merchant_name":"Caring Pharmacy SS2","merchant_id":"SIM-CAR-001","default_amount":45.00}' },
+          { name: 'Fitness First Monthly', amount: 'RM 180.00', badge: 'health', label: 'Health',
+            payload: '{"merchant_name":"Fitness First Monthly","merchant_id":"SIM-FIT-001","default_amount":180.00}' },
+        ]
+      },
+
+      // ── EDUCATION ────────────────────────────────────────────────────
+      {
+        section: 'Education',
+        items: [
+          { name: 'Popular Bookstore', amount: 'RM 55.00', badge: 'education', label: 'Education',
+            payload: '{"merchant_name":"Popular Bookstore","merchant_id":"SIM-POP-001","default_amount":55.00}' },
+          { name: 'Udemy Online Course', amount: 'RM 89.00', badge: 'education', label: 'Education',
+            payload: '{"merchant_name":"Udemy Online Course","merchant_id":"SIM-UDM-001","default_amount":89.00}' },
+        ]
+      },
+
+      // ── LARGE PURCHASES ──────────────────────────────────────────────
+      {
+        section: 'Large Purchases',
+        items: [
+          { name: 'Yamaha Motor Showroom PJ', amount: 'RM 800.00', badge: 'large', label: 'Large',
+            payload: '{"merchant_name":"Yamaha Motor Showroom PJ","merchant_id":"SIM-YMH-001","default_amount":800.00}' },
+          { name: 'Harvey Norman Electronics', amount: 'RM 2,500.00', badge: 'large', label: 'Large',
+            payload: '{"merchant_name":"Harvey Norman Electronics","merchant_id":"SIM-HVN-001","default_amount":2500.00}' },
+        ]
+      },
+
+      // ── SALARY ───────────────────────────────────────────────────────
+      {
+        section: 'Salary Deposit',
+        items: [
+          { name: 'Simulated Employer Sdn Bhd', amount: null, badge: 'salary', label: 'Salary', salary: true,
+            payload: '{"merchant_name":"Simulated Employer Sdn Bhd","merchant_id":"SIM-SAL-001","qr_type":"salary_deposit"}' },
+        ]
+      },
+    ];
+
+    /*
+      STEP 2 — Build the HTML cards.
+
+      For each section we create:
+        <p class="section-title">Section Name</p>
+        <div class="grid">
+          ... cards ...
+        </div>
+
+      For each item inside a section we create a card div, then call
+        new QRCode(containerDiv, { text: payload, width: 160, height: 160 })
+      which draws the QR canvas directly inside that div.
+    */
+    const root = document.getElementById('root');
+
+    qrData.forEach(section => {
+      // Section header
+      const title = document.createElement('p');
+      title.className = 'section-title';
+      title.textContent = section.section;
+      root.appendChild(title);
+
+      // Grid row for this section
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      root.appendChild(grid);
+
+      section.items.forEach(item => {
+        // Outer card
+        const card = document.createElement('div');
+        card.className = item.salary ? 'card salary' : 'card';
+
+        // Category badge
+        const badge = document.createElement('span');
+        badge.className = `badge ${item.badge}`;
+        badge.textContent = item.label;
+        card.appendChild(badge);
+
+        /*
+          STEP 3 — The QR container div.
+          QRCode.js will inject a <canvas> element inside this div.
+          Width and height match the container so the QR fills it cleanly.
+        */
+        const qrDiv = document.createElement('div');
+        qrDiv.className = 'qr-container';
+        card.appendChild(qrDiv);
+
+        // Merchant name label
+        const nameEl = document.createElement('p');
+        nameEl.className = 'merchant-name';
+        nameEl.textContent = item.name;
+        card.appendChild(nameEl);
+
+        // Amount label (or "Enter your salary amount" for salary QR)
+        const amountEl = document.createElement('p');
+        amountEl.className = item.salary ? 'amount salary-tag' : 'amount';
+        amountEl.textContent = item.amount ?? 'Enter your salary amount';
+        card.appendChild(amountEl);
+
+        grid.appendChild(card);
+
+        /*
+          STEP 4 — Generate the QR code.
+          new QRCode(element, options) draws the QR directly into qrDiv.
+          The text is the exact qr_payload string — same as what's in Supabase.
+          When your phone scans it, mobile_scanner returns this exact string.
+        */
+        new QRCode(qrDiv, {
+          text: item.payload,
+          width: 160,
+          height: 160,
+          colorDark: '#202124',
+          colorLight: item.salary ? '#f0faf3' : '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+      });
+    });
+  </script>
+</body>
+</html>
