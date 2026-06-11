@@ -2,6 +2,11 @@
 -- FYP Neobanking System — Complete Database Schema
 -- Author: Lau Zheng Cheng (TP071393)
 -- Created: 2026
+-- Last Updated: 11-06-2026
+-- ============================================
+-- HOW TO RESET:
+--   1. Drop all tables in Supabase (Table Editor or SQL Editor)
+--   2. Run this entire file in Supabase SQL Editor
 -- ============================================
 
 -- Enable UUID generation
@@ -26,6 +31,7 @@ CREATE TABLE profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
+    phone_number TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -306,10 +312,8 @@ CREATE TABLE allocation_history (
 );
 
 -- ============================================
--- ROW LEVEL SECURITY POLICIES
--- Ensures users can only access their own data
+-- ROW LEVEL SECURITY — ENABLE
 -- ============================================
-
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE onboarding_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_financial_profiles ENABLE ROW LEVEL SECURITY;
@@ -321,86 +325,130 @@ ALTER TABLE ai_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE allocation_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE merchant_qr_codes ENABLE ROW LEVEL SECURITY;
 
+-- ============================================
+-- ROW LEVEL SECURITY — POLICIES
+-- All policies scoped to authenticated role
+-- ============================================
+
 -- profiles
 CREATE POLICY "Users can view own profile"
-    ON profiles FOR SELECT USING (auth.uid() = id);
+    ON profiles FOR SELECT TO authenticated USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile"
-    ON profiles FOR UPDATE USING (auth.uid() = id);
+    ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
 -- onboarding_profiles
 CREATE POLICY "Users can view own onboarding profile"
-    ON onboarding_profiles FOR SELECT USING (auth.uid() = user_id);
+    ON onboarding_profiles FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own onboarding profile"
-    ON onboarding_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON onboarding_profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own onboarding profile"
-    ON onboarding_profiles FOR UPDATE USING (auth.uid() = user_id);
+    ON onboarding_profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id);
 
 -- ai_financial_profiles
 CREATE POLICY "Users can view own ai profile"
-    ON ai_financial_profiles FOR SELECT USING (auth.uid() = user_id);
+    ON ai_financial_profiles FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own ai profile"
-    ON ai_financial_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON ai_financial_profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own ai profile"
-    ON ai_financial_profiles FOR UPDATE USING (auth.uid() = user_id);
+    ON ai_financial_profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id);
 
 -- vaults
 CREATE POLICY "Users can view own vaults"
-    ON vaults FOR SELECT USING (auth.uid() = user_id);
+    ON vaults FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own vaults"
-    ON vaults FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON vaults FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own vaults"
-    ON vaults FOR UPDATE USING (auth.uid() = user_id);
+    ON vaults FOR UPDATE TO authenticated USING (auth.uid() = user_id);
 
 -- vault_transfers
 CREATE POLICY "Users can view own vault transfers"
-    ON vault_transfers FOR SELECT USING (auth.uid() = user_id);
+    ON vault_transfers FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own vault transfers"
-    ON vault_transfers FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON vault_transfers FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 -- transactions
 CREATE POLICY "Users can view own transactions"
-    ON transactions FOR SELECT USING (auth.uid() = user_id);
+    ON transactions FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own transactions"
-    ON transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON transactions FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 -- income_injections
 CREATE POLICY "Users can view own income injections"
-    ON income_injections FOR SELECT USING (auth.uid() = user_id);
+    ON income_injections FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own income injections"
-    ON income_injections FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON income_injections FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 -- ai_logs
 CREATE POLICY "Users can view own ai logs"
-    ON ai_logs FOR SELECT USING (auth.uid() = user_id);
+    ON ai_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own ai logs"
-    ON ai_logs FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON ai_logs FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 -- allocation_history
 CREATE POLICY "Users can view own allocation history"
-    ON allocation_history FOR SELECT USING (auth.uid() = user_id);
+    ON allocation_history FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own allocation history"
-    ON allocation_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON allocation_history FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
--- merchant_qr_codes — public read
+-- merchant_qr_codes — public read, no user filter
 CREATE POLICY "Anyone can view merchant qr codes"
-    ON merchant_qr_codes FOR SELECT USING (true);
+    ON merchant_qr_codes FOR SELECT TO authenticated USING (true);
+
+-- ============================================
+-- GRANTS — service_role (backend operations)
+-- Allows Node.js backend (via service_role key) to bypass RLS
+-- ============================================
+GRANT ALL ON public.profiles TO service_role;
+GRANT ALL ON public.onboarding_profiles TO service_role;
+GRANT ALL ON public.ai_financial_profiles TO service_role;
+GRANT ALL ON public.vaults TO service_role;
+GRANT ALL ON public.vault_transfers TO service_role;
+GRANT ALL ON public.transactions TO service_role;
+GRANT ALL ON public.merchant_qr_codes TO service_role;
+GRANT ALL ON public.income_injections TO service_role;
+GRANT ALL ON public.ai_logs TO service_role;
+GRANT ALL ON public.allocation_history TO service_role;
+
+-- ============================================
+-- GRANTS — authenticated role (Flutter client)
+-- ============================================
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.onboarding_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.ai_financial_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.vaults TO authenticated;
+GRANT SELECT, INSERT ON public.vault_transfers TO authenticated;
+GRANT SELECT, INSERT ON public.transactions TO authenticated;
+GRANT SELECT ON public.merchant_qr_codes TO authenticated;
+GRANT SELECT, INSERT ON public.income_injections TO authenticated;
+GRANT SELECT, INSERT ON public.ai_logs TO authenticated;
+GRANT SELECT, INSERT ON public.allocation_history TO authenticated;
 
 -- ============================================
 -- AUTH TRIGGER
 -- Auto-creates profiles row when user registers
+-- SET search_path = public is required for SECURITY DEFINER
+-- functions to correctly resolve unqualified table names
 -- ============================================
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS handle_new_user();
+
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-    INSERT INTO profiles (id, email, full_name)
+    INSERT INTO public.profiles (id, email, full_name, phone_number)
     VALUES (
         NEW.id,
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', '')
+        COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+        NEW.raw_user_meta_data->>'phone_number'
     );
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
