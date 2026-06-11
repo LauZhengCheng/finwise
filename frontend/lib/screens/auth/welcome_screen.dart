@@ -19,7 +19,9 @@ class WelcomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -27,18 +29,25 @@ class WelcomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Spacer(),
-              // App logo placeholder
+              // App logo
               Container(
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryColor,
-                  borderRadius: BorderRadius.circular(24),
+                  gradient: AppTheme.goldGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                      blurRadius: 28,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
                 child: const Icon(
-                  Icons.account_balance_wallet,
-                  size: 50,
-                  color: Colors.white,
+                  Icons.account_balance_wallet_rounded,
+                  size: 48,
+                  color: Color(0xFF0A0800),
                 ),
               ),
               const SizedBox(height: 24),
@@ -93,6 +102,7 @@ class WelcomeScreen extends StatelessWidget {
               const SizedBox(height: 32),
             ],
           ),
+        ),
         ),
       ),
     );

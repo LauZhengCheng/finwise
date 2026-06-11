@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/app_theme.dart';
 import '../../providers/auth_provider.dart';
+//DEBUG
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -44,7 +46,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      if (mounted) context.go('/dashboard');
+
+      // DEBUG — print token for API testing, remove after done
+      final supabase = Supabase.instance.client;
+      print('DEBUG TOKEN: ${supabase.auth.currentSession?.accessToken}');
+
+
+      // Check onboarding status before navigating
+      final userId = supabase.auth.currentUser!.id;
+
+      // Check if onboarding_profiles row exists
+      final onboardingCheck = await supabase
+          .from('onboarding_profiles')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      final onboardingComplete = onboardingCheck != null;
+      if (mounted) {
+        context.go(onboardingComplete ? '/dashboard' : '/onboarding');
+      }
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
@@ -60,20 +81,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Login'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
-        ),
-      ),
-      body: SafeArea(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 32),
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
+                onPressed: () => context.go('/'),
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
               const Text(
                 'Welcome back',
                 style: TextStyle(
@@ -124,6 +145,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

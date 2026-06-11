@@ -44,18 +44,19 @@ class AuthNotifier extends AsyncNotifier<User?> {
     }
   }
 
-  // Sign up with email, password and full name
+  // Sign up with email, password, full name and phone number
   Future<void> signUp({
     required String email,
     required String password,
     required String fullName,
+    required String phoneNumber,
   }) async {
     state = const AsyncLoading();
     try {
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
-        data: {'full_name': fullName},
+        data: {'full_name': fullName, 'phone_number': phoneNumber},
       );
       state = AsyncData(response.user);
     } catch (e) {
