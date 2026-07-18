@@ -2,7 +2,7 @@
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : onboarding_screen.dart
 // Description   : AI onboarding chat screen for FinWise
-//                 Aria converses with user to create personalised vaults
+//                 Aion converses with user to create personalised vaults
 // First Written : 21-May-2026
 // Edited on     : 31-May-2026
 // ============================================
@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/app_theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../providers/vault_provider.dart';
 import '../../models/message_model.dart';
 import '../../models/vault_model.dart';
 import 'widgets/chat_bubble.dart';
@@ -42,7 +43,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  // Scrolls so user's bubble sits at ~50% of screen, leaving space for Aria's reply
+  // Scrolls so user's bubble sits at ~50% of screen, leaving space for Aion's reply
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -61,6 +62,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       context: context,
       isScrollControlled: true,
       isDismissible: false,
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (context) => _VaultSummarySheet(
         vaults: vaults,
@@ -68,6 +70,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         onConfirm: () async {
           await ref.read(onboardingProvider.notifier).confirmVaults();
           if (context.mounted && ref.read(onboardingProvider).vaultsSaved) {
+            ref.read(vaultProvider.notifier).fetchVaults();
             Navigator.pop(context);
             context.go('/dashboard');
           }
@@ -95,7 +98,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           // A vault card may be appended alongside a normal message in one
           // state update, making newest.last point to the card instead of
           // the text bubble. Search all newly added messages for the last
-          // normal Aria message so the typewriter effect is never skipped.
+          // normal Aion message so the typewriter effect is never skipped.
           final newMessages = next.messages.sublist(prevCount);
           final normalMsgs = newMessages
               .where((m) => !m.isUser && m.messageType == MessageType.normal)
@@ -114,7 +117,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         child: SafeArea(
           child: Column(
         children: [
-          // ── Aria header ───────────────────────
+          // ── Aion header ───────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: const BoxDecoration(
@@ -142,7 +145,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Aria',
+                      'Aion',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -211,7 +214,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   ),
           ),
 
-          // Typing indicator — shown while waiting for Aria's response
+          // Typing indicator — shown while waiting for Aion's response
           if (state.isLoading && state.messages.isNotEmpty)
             const _TypingIndicatorBubble(),
 
@@ -309,7 +312,7 @@ class _VaultSummarySheet extends StatelessWidget {
                   const SizedBox(height: 8),
                 ],
                 if (vaults.any((v) => v.vaultType == 'fund')) ...[
-                  _buildSectionHeader('MY FUNDS', 'Saving Goals'),
+                  _buildSectionHeader('MY GOALS', 'Saving Goals'),
                   ...vaults
                       .where((v) => v.vaultType == 'fund')
                       .map(_buildVaultCard),
@@ -456,7 +459,7 @@ class _VaultSummarySheet extends StatelessWidget {
 
 // ─────────────────────────────────────────────
 // TYPING INDICATOR BUBBLE
-// Shows animated 3-dot bubble while Aria is responding
+// Shows animated 3-dot bubble while Aion is responding
 // ─────────────────────────────────────────────
 class _TypingIndicatorBubble extends StatefulWidget {
   const _TypingIndicatorBubble();

@@ -141,6 +141,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
       context: context,
       isScrollControlled: true,
       isDismissible: false,
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (_) => GoalGuardianPopup(
         result: result,
@@ -162,7 +163,9 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
         },
         onCancel: () async {
           context.pop();
-          await TransactionApi().cancel(result);
+          try {
+            await TransactionApi().cancel(result);
+          } catch (_) {}
           if (mounted) context.pop();
         },
       ),
@@ -174,6 +177,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
       context: context,
       isScrollControlled: true,
       isDismissible: false,
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (_) => ActivePilotPopup(
         transactionResult: result,
@@ -198,7 +202,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                "Aria couldn't identify which vault to use. Please select one:",
+                "Aion couldn't identify which vault to use. Please select one:",
                 style: TextStyle(
                     fontSize: 13, color: AppTheme.textSecondary),
               ),
@@ -327,8 +331,8 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
                 else
                   Text(
                     _isCategorizing
-                        ? 'Asking Aria which vault to use...'
-                        : 'Aria will choose the right vault for you',
+                        ? 'Asking Aion which vault to use...'
+                        : 'Aion will choose the right vault for you',
                     style: const TextStyle(
                         fontSize: 13, color: AppTheme.textSecondary),
                   ),
@@ -518,7 +522,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
     final balance = (vault['current_balance'] as num).toDouble();
     final label = _categorizationFailed
         ? 'Please select a vault:'
-        : 'Aria suggests:';
+        : 'Aion suggests:';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -568,6 +572,8 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       backgroundColor: AppTheme.surfaceColor,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -643,7 +649,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
                 strokeWidth: 2.5, color: AppTheme.primaryColor),
           ),
           SizedBox(width: 14),
-          Text('Asking Aria which vault to use...',
+          Text('Asking Aion which vault to use...',
               style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -676,7 +682,7 @@ class _MerchantPayScreenState extends ConsumerState<MerchantPayScreen> {
           ),
           SizedBox(width: 14),
           Text(
-            'Aria is reviewing your transaction...',
+            'Aion is reviewing your transaction...',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,

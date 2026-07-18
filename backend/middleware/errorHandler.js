@@ -7,13 +7,16 @@
 // ============================================
 
 const errorHandler = (err, req, res, next) => {
-    console.error('Error:', err.message);
-    
-    //send error response to frontend
-    res.status(err.status || 500).json({
+    console.error(`[Error] ${req.method} ${req.path}:`, err.message);
+
+    const status = err.status || 500;
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    res.status(status).json({
         success: false,
-        error: err.message || 'Internal server error',
-        timestamp: new Date().toISOString()
+        error: isProduction && status === 500
+          ? 'Internal server error'
+          : err.message || 'Internal server error',
     });
 };
 

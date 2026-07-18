@@ -8,10 +8,11 @@
 
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../config/app_config.dart';
 
 class VaultApi {
   final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.100.15:3000/api';
+  final String _baseUrl = AppConfig.baseUrl;
 
   String? get _token =>
       Supabase.instance.client.auth.currentSession?.accessToken;
@@ -20,6 +21,32 @@ class VaultApi {
         'Authorization': 'Bearer $_token',
         'Content-Type': 'application/json',
       });
+
+  // ─────────────────────────────────────────────
+  // ARCHIVE GOAL
+  // POST /api/vaults/:id/archive
+  // Hides a completed goal from the dashboard.
+  // ─────────────────────────────────────────────
+  Future<void> archiveGoal(String vaultId) async {
+    try {
+      await _dio.post('$_baseUrl/vaults/$vaultId/archive', options: _auth);
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['message'] ?? 'Archive failed');
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // UNARCHIVE GOAL
+  // POST /api/vaults/:id/unarchive
+  // Restores an archived goal to the dashboard.
+  // ─────────────────────────────────────────────
+  Future<void> unarchiveGoal(String vaultId) async {
+    try {
+      await _dio.post('$_baseUrl/vaults/$vaultId/unarchive', options: _auth);
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['message'] ?? 'Unarchive failed');
+    }
+  }
 
   // ─────────────────────────────────────────────
   // TRANSFER

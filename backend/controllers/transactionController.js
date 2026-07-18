@@ -9,6 +9,7 @@
 // ============================================
 
 const supabase = require('../config/supabase');
+const { checkProactiveAfterTransaction } = require('../services/notificationService');
 const {
   safeGeminiCall,
   buildGoalGuardianPrompt,
@@ -60,34 +61,37 @@ const initiateTransaction = async (req, res) => {
     }
 
     // 3 — Categorise merchant (or use manual vault_id override)
+    // Only spending vaults (vault_type='vault') can receive merchant transactions.
+    // Fund vaults are saving goals — they must never be deducted for spending.
+    const spendingVaults = vaults.filter(v => v.vault_type === 'vault');
     let matchedVault = null;
     let categorizationAttempts = 0;
 
     if (manualVaultId) {
-      matchedVault = vaults.find(v => v.id === manualVaultId) || null;
+      matchedVault = spendingVaults.find(v => v.id === manualVaultId) || null;
     } else {
       while (!matchedVault && categorizationAttempts < 2) {
         categorizationAttempts++;
         const catResult = await safeGeminiCall(
           buildCategorizationPrompt(
             merchant.merchant_name,
-            vaults.map(v => ({ name: v.name, category_key: v.category_key }))
+            spendingVaults.map(v => ({ name: v.name, category_key: v.category_key }))
           )
         );
         if (catResult.success && catResult.data?.category_key) {
-          matchedVault = vaults.find(v => v.category_key === catResult.data.category_key) || null;
+          matchedVault = spendingVaults.find(v => v.category_key === catResult.data.category_key) || null;
         }
       }
     }
 
-    // Categorisation failed after both attempts → return for manual vault selection
+    // Categorisation failed after both attempts → return spending vaults for manual selection
     if (!matchedVault) {
       return res.json({
         outcome: 'categorisation_failed',
         merchant_name: merchant.merchant_name,
         amount,
         ai_categorisation_attempts: categorizationAttempts,
-        vaults: vaults.map(v => ({
+        vaults: spendingVaults.map(v => ({
           id: v.id,
           name: v.name,
           category_key: v.category_key,
@@ -100,6 +104,52 @@ const initiateTransaction = async (req, res) => {
     // 4 — Balance check
     const currentBalance = parseFloat(matchedVault.current_balance);
     if (currentBalance < amount) {
+      // Fetch bills + debts for Active Pilot warnings
+      const [{ data: apBills }, { data: apDebts }] = await Promise.all([
+        supabase.from('bills').select('name, amount, due_date, vault_id, is_paid')
+          .eq('user_id', user_id).eq('is_active', true).eq('is_paid', false),
+        supabase.from('debts').select('name, current_monthly_payment, minimum_payment, due_date')
+          .eq('user_id', user_id).eq('is_active', true),
+      ]);
+
+      const vaultsWithWarnings = vaults.map(v => {
+        const balance = parseFloat(v.current_balance);
+        const warnings = [];
+
+        // Warning: vault is a saving goal
+        if (v.vault_type === 'fund' && v.goal_target_amount) {
+          const progress = Math.round((balance / parseFloat(v.goal_target_amount)) * 100);
+          warnings.push(`Saving goal — ${progress}% complete`);
+        }
+
+        // Warning: bill linked to this vault
+        const linkedBills = (apBills || []).filter(b => b.vault_id === v.id);
+        for (const b of linkedBills) {
+          const daysUntil = Math.ceil((new Date(b.due_date).getTime() - Date.now()) / 86400000);
+          if (daysUntil <= 7) warnings.push(`${b.name} (RM ${parseFloat(b.amount).toFixed(0)}) due in ${daysUntil} days`);
+        }
+
+        // Warning: emergency fund coverage
+        if (v.category_key?.includes('emergency')) {
+          const onboarding = null;
+          warnings.push(`Emergency fund — RM ${balance.toFixed(0)} remaining`);
+        }
+
+        // Warning: low balance after potential transfer
+        if (balance > 0 && balance < amount) {
+          warnings.push(`Would empty this vault`);
+        }
+
+        return {
+          id: v.id,
+          name: v.name,
+          category_key: v.category_key,
+          vault_type: v.vault_type,
+          current_balance: balance,
+          warnings,
+        };
+      });
+
       // Write blocked transaction
       const { data: blockedTx } = await supabase
         .from('transactions')
@@ -133,21 +183,22 @@ const initiateTransaction = async (req, res) => {
           current_balance: currentBalance,
         },
         shortfall: Math.round((amount - currentBalance) * 100) / 100,
-        all_vaults: vaults.map(v => ({
-          id: v.id,
-          name: v.name,
-          category_key: v.category_key,
-          vault_type: v.vault_type,
-          current_balance: parseFloat(v.current_balance),
-        })),
+        all_vaults: vaultsWithWarnings,
       });
     }
 
     // 5 — Balance sufficient → run Goal Guardian
-    const [{ data: onboardingProfile }, { data: aiProfile }] = await Promise.all([
+    const [{ data: onboardingProfile }, { data: aiProfile }, { data: debts }, { data: bills }] = await Promise.all([
       supabase.from('onboarding_profiles').select('*').eq('user_id', user_id).single(),
       supabase.from('ai_financial_profiles').select('*').eq('user_id', user_id).single(),
+      supabase.from('debts').select('name, debt_type, current_balance, interest_rate, minimum_payment, current_monthly_payment, due_date')
+        .eq('user_id', user_id).eq('is_active', true),
+      supabase.from('bills').select('name, amount, due_date, is_paid')
+        .eq('user_id', user_id).eq('is_active', true).eq('is_paid', false),
     ]);
+
+    const { getMonthContext } = require('../utils/dateUtils');
+    const { day: dayOfMonth } = getMonthContext();
 
     const guardianResult = await safeGeminiCall(
       buildGoalGuardianPrompt(
@@ -156,15 +207,23 @@ const initiateTransaction = async (req, res) => {
           amount,
           matched_vault: { name: matchedVault.name, category_key: matchedVault.category_key },
         },
-        vaults.map(v => ({
-          name: v.name,
-          category_key: v.category_key,
-          vault_type: v.vault_type,
-          current_balance: parseFloat(v.current_balance),
-          allocated_amount: parseFloat(v.allocated_amount),
-          spent_amount: parseFloat(v.spent_amount),
-          allocation_percentage: v.allocation_percentage,
-        })),
+        vaults.map(v => {
+          const balance = parseFloat(v.current_balance);
+          const spent = parseFloat(v.spent_amount);
+          const avgDaily = dayOfMonth > 1 ? spent / (dayOfMonth - 1) : 0;
+          const daysUntilEmpty = avgDaily > 0 ? Math.round(balance / avgDaily) : null;
+          return {
+            name: v.name,
+            category_key: v.category_key,
+            vault_type: v.vault_type,
+            current_balance: balance,
+            allocated_amount: parseFloat(v.allocated_amount),
+            spent_amount: spent,
+            allocation_percentage: v.allocation_percentage,
+            avg_daily_spend: Math.round(avgDaily * 100) / 100,
+            days_until_empty: daysUntilEmpty,
+          };
+        }),
         {
           monthly_income: onboardingProfile?.monthly_income,
           financial_goals: onboardingProfile?.financial_goals,
@@ -172,6 +231,18 @@ const initiateTransaction = async (req, res) => {
           risk_level: onboardingProfile?.risk_level,
           behavioral_classification: aiProfile?.behavioral_classification,
           key_insights: aiProfile?.key_insights,
+          debts: (debts || []).map(d => ({
+            name: d.name, type: d.debt_type,
+            balance: parseFloat(d.current_balance || 0),
+            payment: parseFloat(d.current_monthly_payment || d.minimum_payment || 0),
+            due_day: d.due_date,
+          })),
+          upcoming_bills: (bills || []).map(b => ({
+            name: b.name,
+            amount: parseFloat(b.amount || 0),
+            due_date: b.due_date,
+            days_until: Math.ceil((new Date(b.due_date).getTime() - Date.now()) / 86400000),
+          })),
         }
       )
     );
@@ -221,6 +292,9 @@ const initiateTransaction = async (req, res) => {
       });
 
       await _applyProfileUpdate(user_id, guardian.profile_update);
+
+      // Fire-and-forget proactive check — never blocks the response
+      checkProactiveAfterTransaction(user_id, matchedVault.id).catch(() => {});
 
       return res.json({
         outcome: 'approved',
@@ -299,6 +373,13 @@ const executeTransaction = async (req, res) => {
 
     await _applyProfileUpdate(user_id, goal_guardian_result?.profile_update);
 
+    const { assessProfileUpdate } = require('../services/profileUpdateService');
+    assessProfileUpdate(user_id, 'guardian_override', {
+      merchant: merchant?.merchant_name, amount, alert_severity: goal_guardian_result?.alert_severity,
+    }).catch(() => {});
+
+    checkProactiveAfterTransaction(user_id, vault_id).catch(() => {});
+
     return res.json({ success: true, outcome: 'approved' });
 
   } catch (error) {
@@ -338,6 +419,11 @@ const cancelTransaction = async (req, res) => {
       ai_categorisation_attempts: 1,
       ai_categorisation_failed: false,
     });
+
+    const { assessProfileUpdate } = require('../services/profileUpdateService');
+    assessProfileUpdate(user_id, 'guardian_heeded', {
+      merchant: merchant?.merchant_name, amount,
+    }).catch(() => {});
 
     return res.json({ success: true, outcome: 'cancelled' });
 
@@ -403,6 +489,9 @@ const categorizeTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No active vaults found' });
     }
 
+    // Only spending vaults — fund vaults cannot be used for merchant payments
+    const spendingVaults = vaults.filter(v => v.vault_type === 'vault');
+
     // Run categorisation — max 2 attempts
     let matchedVault = null;
     let attempts = 0;
@@ -411,15 +500,15 @@ const categorizeTransaction = async (req, res) => {
       const catResult = await safeGeminiCall(
         buildCategorizationPrompt(
           merchant.merchant_name,
-          vaults.map(v => ({ name: v.name, category_key: v.category_key }))
+          spendingVaults.map(v => ({ name: v.name, category_key: v.category_key }))
         )
       );
       if (catResult.success && catResult.data?.category_key) {
-        matchedVault = vaults.find(v => v.category_key === catResult.data.category_key) || null;
+        matchedVault = spendingVaults.find(v => v.category_key === catResult.data.category_key) || null;
       }
     }
 
-    const allVaults = vaults.map(v => ({
+    const allVaults = spendingVaults.map(v => ({
       id: v.id,
       name: v.name,
       category_key: v.category_key,
@@ -457,21 +546,26 @@ const categorizeTransaction = async (req, res) => {
 const getTransactionHistory = async (req, res) => {
   try {
     const user_id = req.user.id;
-    console.log('[history] fetching for user_id:', user_id);
+    const vault_id = req.query.vault_id;
 
-    const { data: transactions, error } = await supabase
-      .from('transactions')
-      .select('id, amount, status, transaction_type, merchant_name, merchant_category, created_at, vault_id')
-      .eq('user_id', user_id)
-      .order('created_at', { ascending: false });
-
-    console.log('[history] rows:', transactions?.length, '| error:', error?.message);
+    const [{ data: transactions, error }, { data: incomes }] = await Promise.all([
+      supabase.from('transactions')
+        .select('id, amount, status, transaction_type, merchant_name, merchant_category, created_at, vault_id, note')
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false }),
+      supabase.from('income_injections')
+        .select('id, amount, allocation_snapshot, status, injection_date, notes')
+        .eq('user_id', user_id)
+        .eq('status', 'applied')
+        .order('injection_date', { ascending: false }),
+    ]);
 
     if (error) throw error;
 
-    // Fetch vault names separately to avoid PostgREST join hint issues
-    const results = await Promise.all(
+    // Fetch vault names for transactions
+    const txResults = await Promise.all(
       (transactions ?? []).map(async (tx) => {
+        if (vault_id && tx.vault_id !== vault_id) return null;
         if (!tx.vault_id) return { ...tx, vaults: null };
         const { data: vault } = await supabase
           .from('vaults')
@@ -482,7 +576,55 @@ const getTransactionHistory = async (req, res) => {
       })
     );
 
-    return res.json({ success: true, transactions: results });
+    const filteredTx = txResults.filter(t => t !== null);
+
+    // Merge income records into timeline
+    const incomeRecords = [];
+    for (const inc of (incomes || [])) {
+      const snapshot = inc.allocation_snapshot || {};
+      const isGeneralDeposit = inc.notes?.includes('general_deposit') || Object.keys(snapshot).length <= 1;
+
+      if (vault_id) {
+        // Vault-specific: find this vault's allocation from snapshot
+        const vaultData = snapshot[vault_id];
+        if (vaultData) {
+          const allocatedAmount = typeof vaultData === 'object' ? (vaultData.allocated || 0) : vaultData;
+          incomeRecords.push({
+            id: `income_${inc.id}`,
+            amount: parseFloat(allocatedAmount),
+            status: 'approved',
+            transaction_type: 'income',
+            merchant_name: isGeneralDeposit ? 'General Deposit' : `Salary Allocation (${vaultData.percentage || 0}%)`,
+            merchant_category: 'income',
+            created_at: inc.injection_date,
+            vault_id: vault_id,
+            vaults: vaultData.name ? { name: vaultData.name } : null,
+            is_income: true,
+            total_income: parseFloat(inc.amount),
+          });
+        }
+      } else {
+        // General history: show 1 record per income
+        incomeRecords.push({
+          id: `income_${inc.id}`,
+          amount: parseFloat(inc.amount),
+          status: 'approved',
+          transaction_type: 'income',
+          merchant_name: isGeneralDeposit ? 'General Deposit' : 'Salary Deposit',
+          merchant_category: 'income',
+          created_at: inc.injection_date,
+          vault_id: null,
+          vaults: null,
+          is_income: true,
+        });
+      }
+    }
+
+    // Combine and sort by date
+    const combined = [...filteredTx, ...incomeRecords]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return res.json({ success: true, transactions: combined });
   } catch (error) {
     console.error('getTransactionHistory error:', error.message);
     res.status(500).json({ success: false, message: 'Internal server error' });

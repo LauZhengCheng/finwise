@@ -82,7 +82,7 @@ class _ChatInputState extends State<ChatInput> {
                     disabledBorder: InputBorder.none,
                     filled: false,
                     hintText: widget.isLoading
-                        ? 'Aria is thinking...'
+                        ? 'Aion is thinking...'
                         : 'Type your message...',
                     hintStyle: const TextStyle(
                       color: AppTheme.textHint,

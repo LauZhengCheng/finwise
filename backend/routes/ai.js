@@ -32,7 +32,7 @@ router.post('/onboarding/confirm-vaults', (req, res, next) => authenticateUser(r
 // ADVISORY CHAT ROUTES
 // ─────────────────────────────────────────────
 
-// POST /api/ai/chat — send a message to Aria
+// POST /api/ai/chat — send a message to Aion
 router.post('/chat', (req, res, next) => authenticateUser(req, res, next), (req, res) => aiController.advisoryChat(req, res));
 
 // GET /api/ai/chat/history — load all past chat messages for display
@@ -46,6 +46,12 @@ router.post('/chat/apply-vault-changes', (req, res, next) => authenticateUser(re
 
 // GET /api/ai/profile — full user profile: onboarding + AI conclusions + allocation history
 router.get('/profile', (req, res, next) => authenticateUser(req, res, next), (req, res) => aiController.getMyProfile(req, res));
+
+// GET /api/ai/notifications/latest — latest unread proactive notification
+router.get('/notifications/latest', (req, res, next) => authenticateUser(req, res, next), (req, res) => aiController.getLatestNotification(req, res));
+
+// PATCH /api/ai/notifications/:id/read — mark notification as read
+router.patch('/notifications/:id/read', (req, res, next) => authenticateUser(req, res, next), (req, res) => aiController.markNotificationRead(req, res));
 
 //export router for use in other files
 module.exports = router;

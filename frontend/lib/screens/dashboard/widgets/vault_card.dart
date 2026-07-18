@@ -5,7 +5,7 @@
 //                 the MY VAULTS container on the dashboard.
 //                 No individual card container — parent provides the surface.
 // First Written : 06-06-2026
-// Edited on     : 10-06-2026
+// Edited on     : 18-06-2026
 // ============================================
 
 import 'package:flutter/material.dart';
@@ -28,19 +28,39 @@ class VaultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final remaining =
-        (vault.allocatedAmount - vault.spentAmount).clamp(0.0, double.infinity);
     final progress = vault.allocatedAmount > 0
         ? (vault.spentAmount / vault.allocatedAmount).clamp(0.0, 1.0)
         : 0.0;
     final isOverBudget = vault.spentAmount > vault.allocatedAmount;
+    final isFull = !isOverBudget && progress >= 1.0;
+    final isLow  = !isOverBudget && !isFull && progress >= 0.8;
+
+    final barColor = isOverBudget
+        ? AppTheme.errorColor
+        : (isFull || isLow)
+            ? Colors.orange
+            : _colour;
+
+    final budgetLabel = isOverBudget
+        ? 'Over original budget by RM ${(vault.spentAmount - vault.allocatedAmount).toStringAsFixed(2)}'
+        : isFull
+            ? 'Original budget fully used'
+            : '${(progress * 100).toInt()}% of original budget used';
+
+    final budgetLabelColor = isOverBudget
+        ? AppTheme.errorColor
+        : (isFull || isLow)
+            ? Colors.orange
+            : AppTheme.textSecondary;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Top row: name + balance ──────────────────
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Colour dot
               Container(
@@ -67,55 +87,92 @@ class VaultCard extends StatelessWidget {
                 ),
               ),
 
-              // Remaining amount
-              Text(
-                isOverBudget
-                    ? '−RM ${(vault.spentAmount - vault.allocatedAmount).toStringAsFixed(2)}'
-                    : 'RM ${remaining.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isOverBudget ? AppTheme.errorColor : AppTheme.textPrimary,
-                ),
+              // Balance — always current_balance, never negative
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'RM ${vault.currentBalance.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: vault.currentBalance == 0
+                          ? AppTheme.errorColor
+                          : AppTheme.textPrimary,
+                    ),
+                  ),
+                  const Text(
+                    'Balance',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: AppTheme.textHint,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
 
           const SizedBox(height: 8),
 
-          // Progress bar + labels
+          // ── Progress bar ─────────────────────────────
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress,
-              backgroundColor: _colour.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                isOverBudget ? AppTheme.errorColor : _colour,
-              ),
+              backgroundColor: barColor.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
               minHeight: 4,
             ),
           ),
 
           const SizedBox(height: 5),
 
+          // ── Bottom row: spent label + budget status ───
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'RM ${vault.spentAmount.toStringAsFixed(2)} spent',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textHint,
+              // Left: "Spent  RM X.XX"
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Spent  ',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textHint,
+                      ),
+                    ),
+                    Flexible(
+                      child: Text(
+                        'RM ${vault.spentAmount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textSecondary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                isOverBudget
-                    ? 'Over budget'
-                    : '${(progress * 100).toInt()}% used',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: isOverBudget ? AppTheme.errorColor : AppTheme.textSecondary,
+
+              const SizedBox(width: 8),
+
+              // Right: budget status
+              Flexible(
+                child: Text(
+                  budgetLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isOverBudget ? FontWeight.w600 : FontWeight.w500,
+                    color: budgetLabelColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
                 ),
               ),
             ],

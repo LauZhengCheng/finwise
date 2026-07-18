@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "471596001900",
+    "project_id": "finwise-cd601",
+    "storage_bucket": "finwise-cd601.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:471596001900:android:9764270676204faccd8649",
+        "android_client_info": {
+          "package_name": "com.fyp.fyp_neobanking"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaSKNoNvFW9Kvw_AQk8cywAhqyKugBN_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

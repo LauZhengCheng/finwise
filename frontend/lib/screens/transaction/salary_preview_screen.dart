@@ -13,7 +13,9 @@ import 'package:go_router/go_router.dart';
 import '../../config/app_theme.dart';
 import '../../models/vault_model.dart';
 import '../../providers/vault_provider.dart';
+import '../../providers/pending_income_provider.dart';
 import '../../services/api/income_api.dart';
+import '../../widgets/goal_celebration_overlay.dart';
 
 class SalaryPreviewScreen extends ConsumerStatefulWidget {
   final double amount;
@@ -34,11 +36,13 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
         100;
   }
 
-  // Build the allocation list with rounding correction on first vault
+  // Build the allocation list with rounding correction on first vault.
+  // Completed goals are excluded — they receive 0% and add noise.
   List<_VaultAllocation> _buildAllocations(List<VaultModel> vaults) {
-    if (vaults.isEmpty) return [];
+    final active = vaults.where((v) => v.completedAt == null).toList();
+    if (active.isEmpty) return [];
 
-    final allocations = vaults
+    final allocations = active
         .map((v) => _VaultAllocation(
               vault: v,
               allocated: _calculateAllocation(v),
@@ -51,8 +55,7 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
     if (diff != 0.0) {
       allocations[0] = _VaultAllocation(
         vault: allocations[0].vault,
-        allocated:
-            ((allocations[0].allocated + diff) * 100).round() / 100,
+        allocated: ((allocations[0].allocated + diff) * 100).round() / 100,
       );
     }
 
@@ -62,10 +65,37 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
   Future<void> _confirmDeposit(List<VaultModel> vaults) async {
     setState(() => _isConfirming = true);
     try {
-      await IncomeApi().injectIncome(amount: widget.amount);
-      // Refresh vault provider so dashboard shows updated balances
-      ref.read(vaultProvider.notifier).fetchVaults();
-      if (mounted) context.go('/dashboard');
+      final result = await IncomeApi().stageIncome(amount: widget.amount);
+      final injectionId = result['injection_id'] as String;
+      final totalCarryover = (result['total_carryover'] as num?)?.toDouble() ?? 0;
+
+      List<dynamic> completedGoals = [];
+
+      if (totalCarryover < 0.01) {
+        // All spending vaults were empty — no choice needed, apply immediately
+        final applyResult = await IncomeApi().applyIncome(injectionId: injectionId, mode: 'carry_over');
+        completedGoals = applyResult['completed_goals'] as List<dynamic>? ?? [];
+        ref.read(vaultProvider.notifier).fetchVaults();
+      } else {
+        // Carryover exists — show choice card on dashboard
+        await ref.read(pendingIncomeProvider.notifier).fetchPending();
+      }
+
+      if (!mounted) return;
+
+      bool wantsChat = false;
+      for (final goal in completedGoals) {
+        if (!mounted) break;
+        final tappedChat = await GoalCelebrationOverlay.show(
+          context,
+          vaultName: goal['vault_name'] as String,
+          goalTargetAmount: (goal['goal_target_amount'] as num).toDouble(),
+          allocationPercentage: (goal['allocation_percentage'] as num?)?.toInt() ?? 0,
+        );
+        if (tappedChat) wantsChat = true;
+      }
+
+      if (mounted) context.go(wantsChat ? '/chat' : '/dashboard');
     } catch (e) {
       if (mounted) {
         setState(() => _isConfirming = false);
@@ -112,6 +142,7 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
 
   Widget _buildContent(List<VaultModel> vaults) {
     final allocations = _buildAllocations(vaults);
+    final activeCount = vaults.where((v) => v.completedAt == null).length;
 
     return SafeArea(
       child: Column(
@@ -160,7 +191,7 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Split across ${vaults.length} vaults',
+                  'Split across $activeCount vaults',
                   style: const TextStyle(
                     fontSize: 13,
                     color: AppTheme.textSecondary,
@@ -226,7 +257,7 @@ class _SalaryPreviewScreenState extends ConsumerState<SalaryPreviewScreen> {
                             const SizedBox(height: 2),
                             Text(
                               a.vault.vaultType == 'fund'
-                                  ? 'Saving Fund'
+                                  ? 'Saving Goal'
                                   : 'Spending Vault',
                               style: const TextStyle(
                                 fontSize: 12,

@@ -4,7 +4,7 @@
 // Description   : Registration screen for FYP Neobanking.
 //                 Handles new user account creation via Supabase Auth.
 // First Written : 21-May-2026
-// Edited on     : 21-May-2026
+// Edited on     : 17-06-2026
 // ============================================
 
 import 'package:flutter/material.dart';
@@ -50,6 +50,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
 
+    if (_passwordController.text.length < 6) {
+      setState(() {
+        _errorMessage = 'Password must be at least 6 characters';
+      });
+      return;
+    }
+
     if (_passwordController.text != _confirmPasswordController.text) {
       setState(() {
         _errorMessage = 'Passwords do not match';
@@ -71,13 +78,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       );
       if (mounted) context.go('/onboarding');
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString();
+        final raw = e.toString().toLowerCase();
+        if (raw.contains('user already registered') ||
+            raw.contains('email already')) {
+          _errorMessage = 'This email is already registered. Please log in instead.';
+        } else if (raw.contains('database error') ||
+            raw.contains('unexpected_failure') ||
+            raw.contains('statuscode: 500')) {
+          _errorMessage = 'This phone number is already linked to an account. Please use a different number.';
+        } else {
+          _errorMessage = 'Registration failed. Please try again.';
+        }
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

@@ -4,34 +4,44 @@
 // Description   : Persistent shell for the 4 main tabs.
 //                 Floating pill nav bar with BackdropFilter blur.
 //                 Scanner button elevated at centre — pushes /qr-scanner.
-//                 Visual order: Home | Chat | [Scanner] | Transactions | Profile
+//                 Visual order: Home | Grow | [Scanner] | Discover | Profile
+//                 Shell indices: 0=Home, 1=Grow, 2=Discover, 3=Profile
 // First Written : 10-06-2026
-// Edited on     : 10-06-2026
+// Edited on     : 19-06-2026
 // ============================================
 
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../config/app_theme.dart';
-import 'transaction/transaction_history_screen.dart';
 
-class MainScaffold extends ConsumerWidget {
+// Each tab screen can listen to its notifier to refresh on nav tap
+final homeTabRefresh = ValueNotifier<int>(0);
+final growTabRefresh = ValueNotifier<int>(0);
+final discoverTabRefresh = ValueNotifier<int>(0);
+final profileTabRefresh = ValueNotifier<int>(0);
+
+class MainScaffold extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
   const MainScaffold({super.key, required this.navigationShell});
 
-  // Visual positions: 0=Home, 1=Chat, 2=Scanner(push), 3=Transactions, 4=Profile
-  // Shell indices:    0=Home, 1=Chat,                   2=Transactions, 3=Profile
-  void _onNavTap(BuildContext context, WidgetRef ref, int visualIndex) {
+  // Visual positions: 0=Home, 1=Grow, 2=Scanner(push), 3=Discover, 4=Profile
+  // Shell indices:    0=Home, 1=Grow,                   2=Discover, 3=Profile
+  void _onNavTap(BuildContext context, int visualIndex) {
     if (visualIndex == 2) {
       context.push('/qr-scanner');
       return;
     }
     final shellIndex = visualIndex > 2 ? visualIndex - 1 : visualIndex;
-    // Transactions tab (shell index 2) — trigger a silent reload
-    if (shellIndex == 2) {
-      ref.read(transactionRefreshTriggerProvider.notifier).state++;
+
+    // Fire refresh notifier for the target tab
+    switch (shellIndex) {
+      case 0: homeTabRefresh.value++;
+      case 1: growTabRefresh.value++;
+      case 2: discoverTabRefresh.value++;
+      case 3: profileTabRefresh.value++;
     }
+
     navigationShell.goBranch(
       shellIndex,
       initialLocation: shellIndex == navigationShell.currentIndex,
@@ -39,23 +49,21 @@ class MainScaffold extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: Stack(
         children: [
           navigationShell,
-          // Hide nav bar on chat tab (index 1) — full-screen focused experience
-          if (navigationShell.currentIndex != 1)
-            Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: _FloatingNavBar(
-                currentShellIndex: navigationShell.currentIndex,
-                onTap: (i) => _onNavTap(context, ref, i),
-              ),
+          Positioned(
+            bottom: 20,
+            left: 20,
+            right: 20,
+            child: _FloatingNavBar(
+              currentShellIndex: navigationShell.currentIndex,
+              onTap: (i) => _onNavTap(context, i),
             ),
+          ),
         ],
       ),
     );
@@ -91,7 +99,7 @@ class _FloatingNavBar extends StatelessWidget {
               child: Container(
                 height: 64,
                 decoration: BoxDecoration(
-                  color: const Color(0x1AFFFFFF), // ~10% white
+                  color: const Color(0x1AFFFFFF),
                   borderRadius: BorderRadius.circular(38),
                 ),
                 child: Row(
@@ -104,14 +112,14 @@ class _FloatingNavBar extends StatelessWidget {
                       onTap: onTap,
                     ),
                     _NavItem(
-                      icon: Icons.chat_bubble_rounded,
+                      icon: Icons.trending_up_rounded,
                       visualIndex: 1,
                       activeVisual: _activeVisual,
                       onTap: onTap,
                     ),
                     const SizedBox(width: 60), // gap for scanner button
                     _NavItem(
-                      icon: Icons.receipt_long_rounded,
+                      icon: Icons.explore_rounded,
                       visualIndex: 3,
                       activeVisual: _activeVisual,
                       onTap: onTap,

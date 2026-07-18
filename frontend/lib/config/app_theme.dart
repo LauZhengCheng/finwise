@@ -108,8 +108,7 @@ class AppTheme {
   }
 
   // ── Theme ──────────────────────────────────────────────────────────────
-  // Named lightTheme for backwards compatibility with main.dart
-  static ThemeData get lightTheme {
+  static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,

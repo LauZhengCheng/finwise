@@ -1,0 +1,499 @@
+@startuml FinWise_Backend_Design_Class_Diagram
+title FinWise — Backend Design Class Diagram
+
+' Generated from the implemented Node.js backend modules.
+' JavaScript modules are represented as UML classes with architectural stereotypes;
+' this does not imply that every module is implemented as an ES6 class.
+
+top to bottom direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam ArrowColor #51483A
+skinparam ClassBorderColor #51483A
+skinparam PackageBorderColor #8A774F
+skinparam PackageBackgroundColor #FFFDF8
+
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #51483A
+  FontColor #201C16
+  HeaderBackgroundColor #F4E8C8
+}
+
+package "API Layer" #FFF7E5 {
+  class ExpressApplication <<application>> {
+    +healthCheck()
+    +registerMiddleware()
+    +registerRoutes()
+    +startServer()
+  }
+
+  class RouteRegistry <<router>> {
+    +authRoutes
+    +vaultRoutes
+    +transactionRoutes
+    +aiRoutes
+    +incomeRoutes
+    +debtRoutes
+    +investmentRoutes
+    +billRoutes
+    +achievementRoutes
+    +financeRoutes
+    +jobRoutes
+    +transferRoutes
+    +notificationRoutes
+  }
+
+  class AuthMiddleware <<middleware>> {
+    +authenticateUser(req, res, next)
+  }
+
+  class ErrorHandler <<middleware>> {
+    +handle(err, req, res, next)
+  }
+
+  class AuthRouteHandler <<control>> {
+    +getStatus()
+    +getOnboardingStatus()
+    +getProfile()
+    +updateProfile()
+  }
+}
+
+package "Application Controllers" #F8F2E7 {
+  class AIController <<control>> {
+    +onboardingChat()
+    +confirmVaults()
+    +advisoryChat()
+    +getChatHistory()
+    +summarizeSession()
+    +getMyProfile()
+    +applyVaultChanges()
+    +getLatestNotification()
+    +markNotificationRead()
+  }
+
+  class TransactionController <<control>> {
+    +categorizeTransaction()
+    +initiateTransaction()
+    +executeTransaction()
+    +cancelTransaction()
+    +getTransactionHistory()
+  }
+
+  class IncomeController <<control>> {
+    +injectIncome()
+    +depositToVault()
+    +stageIncome()
+    +applyIncome()
+    +getPendingIncome()
+  }
+
+  class VaultController <<control>> {
+    +transferVault()
+    +archiveGoal()
+    +unarchiveGoal()
+  }
+
+  class TransferController <<control>> {
+    +lookupRecipient()
+    +sendTransfer()
+    +allocateTransfer()
+    +getTransferHistory()
+  }
+
+  class DebtController <<control>> {
+    +getDebts()
+    +createDebt()
+    +updateDebt()
+    +deleteDebt()
+    +getStrategy()
+  }
+
+  class InvestmentController <<control>> {
+    +getInvestments()
+    +createInvestment()
+    +updateInvestment()
+    +deleteInvestment()
+    +saveAllInvestments()
+    +getPortfolioRisk()
+    +getPortfolioAnalysis()
+    +getCryptoPrices()
+    +getStockQuote()
+    +getListings()
+  }
+
+  class BillController <<control>> {
+    +getBills()
+    +createBill()
+    +updateBill()
+    +deleteBill()
+    +checkAllBillsOnStartup()
+  }
+
+  class FinanceController <<control>> {
+    +getHealthScore()
+    +getInsuranceCoverage()
+    +updateInsuranceCoverage()
+    +getNetWorth()
+    +getSpendingForecast()
+    +getFinancialNews()
+    +getFDRates()
+    +getDeals()
+    +getProtectionRecommendations()
+    +getTickerData()
+  }
+
+  class AchievementController <<control>> {
+    +getAchievements()
+  }
+
+  class NotificationController <<control>> {
+    +registerToken()
+    +clearToken()
+    +getNotificationHistory()
+    +markChatOpened()
+  }
+
+  class JobController <<control>> {
+    +triggerJob()
+  }
+}
+
+package "Domain and AI Services" #EEF6FF {
+  class SupabaseService <<service>> {
+    +getProfile(userId)
+    +updateProfile(userId, updates)
+    +checkOnboardingComplete(userId)
+    +getUserVaults(userId)
+    +getRecentTransactions(userId, limit)
+    +getRecentChatMessages(userId, limit)
+  }
+
+  class GeminiService <<service>> {
+    +safeGeminiCall(prompt)
+    +buildOnboardingPrompt(...)
+    +buildReviewerPrompt(...)
+    +buildChatPrompt(...)
+    +buildGoalGuardianPrompt(...)
+    +buildCategorizationPrompt(...)
+    +buildSummarizationPrompt(...)
+    +buildProactivePrompt(...)
+    +buildGoalCompletionPrompt(...)
+    +buildNewsSummaryPrompt(...)
+    +buildFDExtractionPrompt(...)
+    +buildDealExtractionPrompt(...)
+  }
+
+  class LangGraphService <<service>> {
+    +runAionAgent(userId, message, context, history, transfers)
+  }
+
+  class AionToolRegistry <<service>> {
+    +getVaultTransactions
+    +getRecentTransactions
+    +getSpendingVelocity
+    +getUserDebts
+    +getDebtStrategy
+    +getMarketData
+    +getNews
+    +calculateLoan
+    +calculateGoalTimeline
+    +getFDRates
+    +getDeals
+    +searchPastConversations
+    +updateDebtPayment
+    +getUserBills
+    +getInvestmentPortfolio
+    +getHealthScore
+  }
+
+  class EmbeddingService <<service>> {
+    +embedText(text)
+    +embedBatch(texts)
+    +generateQueryVariations(query)
+    +reciprocalRankFusion(resultSets, k)
+  }
+
+  class ProfileUpdateService <<service>> {
+    +assessProfileUpdate(userId, eventType, eventData)
+  }
+
+  class HealthScoreService <<service>> {
+    +calculateHealthScore(userId)
+  }
+
+  class NotificationService <<service>> {
+    +sendPushNotification(userId, title, body, route)
+    +checkProactiveAfterIncome(userId)
+    +checkProactiveAfterTransaction(userId, vaultId)
+    +checkGoalCompletion(userId)
+    +checkProactiveAfterDebtChange(userId)
+    +checkProactiveAfterBillChange(userId)
+    +checkProactiveAfterInvestmentChange(userId)
+  }
+
+  class MarketDataService <<service>> {
+    +refreshAllMarketData()
+    +fetchCrypto()
+    +fetchStock(symbol)
+    +fetchFX()
+    +fetchHistoricalVolatility(ticker, category)
+    +fetchTickerQuotes(symbols)
+  }
+
+  class NewsService <<service>> {
+    +fetchAndSummariseNews()
+  }
+
+  class ScrapeService <<service>> {
+    +scrapeFDRates()
+    +scrapeDeals()
+  }
+
+  class CacheService <<service>> {
+    +cacheGet(key)
+    +cacheSet(key, value, ttlSeconds)
+    +cacheDelete(key)
+  }
+
+  class DateUtils <<utility>> {
+    +nowMYT()
+    +getMonthContext()
+    +formatDateMYT(date)
+    +formatDateTimeMYT(date)
+  }
+
+  class DomainConstants <<utility>> {
+    +TRANSACTION_STATUS
+    +TRANSACTION_TYPE
+    +VAULT_TYPE
+    +TRANSFER_TYPE
+    +BEHAVIORAL_CLASSIFICATION
+    +AI_INTERACTION_TYPE
+    +VALIDATION_STATUS
+    +ALLOCATION_TRIGGER
+  }
+}
+
+package "Background Processing" #F3EEFF {
+  class MarketDataWorker <<worker>> { +process(job) }
+  class NewsFetchWorker <<worker>> { +process(job) }
+  class FDScrapeWorker <<worker>> { +process(job) }
+  class DealsScrapeWorker <<worker>> { +process(job) }
+}
+
+package "Persistence and Integration Gateways" #EDF8EF {
+  class SupabaseClient <<gateway>> {
+    +auth
+    +from(table)
+    +rpc(function, params)
+  }
+
+  class MongoConnection <<gateway>> {
+    +connectMongo()
+  }
+
+  class RedisClient <<gateway>> {
+    +getRedisClient()
+  }
+
+  class BullMQGateway <<gateway>> {
+    +getQueue(name)
+  }
+
+  class VertexGeminiClient <<external>> {
+    +generateContent(prompt)
+    +embedContent(text)
+  }
+
+  class FirebaseMessaging <<external>> {
+    +send(message)
+  }
+
+  class ExternalMarketSources <<external>> {
+    +CoinGecko
+    +AlphaVantage
+    +Frankfurter
+  }
+
+  class ExternalContentSources <<external>> {
+    +RSSFeeds
+    +JinaReader
+  }
+}
+
+package "Persistent Domain" #FFFBEF {
+  class PostgreSQLDomain <<entity>> {
+    +profiles
+    +onboarding_profiles
+    +ai_financial_profiles
+    +vaults
+    +vault_transfers
+    +merchant_qr_codes
+    +transactions
+    +income_injections
+    +ai_logs
+    +allocation_history
+    +debts
+    +investments
+    +bills
+    +p2p_transfers
+    +bill_payment_history
+    +debt_balance_snapshots
+  }
+
+  class MongoDocumentModels <<document>> {
+    +MarketDataCache
+    +VolatilityCache
+    +NewsArticle
+    +FDRate
+    +Deal
+    +StockListing
+  }
+}
+
+' API assembly
+ExpressApplication *-- RouteRegistry
+ExpressApplication o-- ErrorHandler
+ExpressApplication ..> MarketDataService : startup refresh
+ExpressApplication ..> NewsService : startup refresh
+ExpressApplication ..> ScrapeService : startup refresh
+ExpressApplication ..> BillController : startup bill check
+RouteRegistry ..> AuthMiddleware : protects user routes
+AuthMiddleware ..> SupabaseClient : verifies JWT
+RouteRegistry ..> AuthRouteHandler
+RouteRegistry ..> AIController
+RouteRegistry ..> TransactionController
+RouteRegistry ..> IncomeController
+RouteRegistry ..> VaultController
+RouteRegistry ..> TransferController
+RouteRegistry ..> DebtController
+RouteRegistry ..> InvestmentController
+RouteRegistry ..> BillController
+RouteRegistry ..> FinanceController
+RouteRegistry ..> AchievementController
+RouteRegistry ..> NotificationController
+RouteRegistry ..> JobController
+
+' Controller to service dependencies
+AuthRouteHandler ..> SupabaseService
+AIController ..> GeminiService
+AIController ..> LangGraphService
+AIController ..> EmbeddingService
+AIController ..> NotificationService
+TransactionController ..> GeminiService
+TransactionController ..> NotificationService
+TransactionController ..> ProfileUpdateService
+IncomeController ..> NotificationService
+IncomeController ..> ProfileUpdateService
+VaultController ..> ProfileUpdateService
+TransferController ..> NotificationService
+TransferController ..> ProfileUpdateService
+DebtController ..> NotificationService
+DebtController ..> ProfileUpdateService
+InvestmentController ..> GeminiService
+InvestmentController ..> MarketDataService
+InvestmentController ..> CacheService
+InvestmentController ..> NotificationService
+InvestmentController ..> ProfileUpdateService
+BillController ..> NotificationService
+BillController ..> ProfileUpdateService
+FinanceController ..> HealthScoreService
+FinanceController ..> GeminiService
+FinanceController ..> MarketDataService
+FinanceController ..> CacheService
+
+' Direct persistence used by controllers
+AuthRouteHandler ..> SupabaseClient
+AIController ..> SupabaseClient
+TransactionController ..> SupabaseClient
+IncomeController ..> SupabaseClient
+VaultController ..> SupabaseClient
+TransferController ..> SupabaseClient
+DebtController ..> SupabaseClient
+InvestmentController ..> SupabaseClient
+BillController ..> SupabaseClient
+FinanceController ..> SupabaseClient
+AchievementController ..> SupabaseClient
+NotificationController ..> SupabaseClient
+
+' Service collaboration
+LangGraphService *-- AionToolRegistry : registers 16 tools
+LangGraphService ..> GeminiService : fallback
+AionToolRegistry ..> EmbeddingService
+AionToolRegistry ..> HealthScoreService
+AionToolRegistry ..> CacheService
+EmbeddingService ..> VertexGeminiClient
+GeminiService ..> VertexGeminiClient
+ProfileUpdateService ..> GeminiService
+NotificationService ..> GeminiService
+NotificationService ..> SupabaseService
+NotificationService ..> FirebaseMessaging
+NotificationService ..> CacheService
+MarketDataService ..> CacheService
+MarketDataService ..> ExternalMarketSources
+NewsService ..> GeminiService
+NewsService ..> CacheService
+NewsService ..> ExternalContentSources
+ScrapeService ..> GeminiService
+ScrapeService ..> CacheService
+ScrapeService ..> ExternalContentSources
+CacheService ..> RedisClient
+BullMQGateway ..> RedisClient : queue connection
+
+' Persistence access
+SupabaseClient --> PostgreSQLDomain : reads / writes
+SupabaseService ..> SupabaseClient
+HealthScoreService ..> SupabaseClient
+ProfileUpdateService ..> SupabaseClient
+NotificationService ..> SupabaseClient
+AionToolRegistry ..> SupabaseClient
+MongoConnection --> MongoDocumentModels : manages
+FinanceController ..> MongoConnection
+FinanceController ..> MongoDocumentModels : queries
+InvestmentController ..> MongoConnection
+InvestmentController ..> MongoDocumentModels : queries / updates
+AionToolRegistry ..> MongoConnection
+AionToolRegistry ..> MongoDocumentModels : fallback queries
+MarketDataService ..> MongoConnection
+NewsService ..> MongoConnection
+ScrapeService ..> MongoConnection
+NotificationService ..> MongoDocumentModels : market fallback
+
+' Background jobs
+JobController ..> BullMQGateway : enqueues named jobs
+BullMQGateway o-- MarketDataWorker
+BullMQGateway o-- NewsFetchWorker
+BullMQGateway o-- FDScrapeWorker
+BullMQGateway o-- DealsScrapeWorker
+MarketDataWorker ..> MarketDataService
+NewsFetchWorker ..> NewsService
+FDScrapeWorker ..> ScrapeService
+DealsScrapeWorker ..> ScrapeService
+MarketDataService ..> MongoDocumentModels
+NewsService ..> MongoDocumentModels
+ScrapeService ..> MongoDocumentModels
+
+note right of PostgreSQLDomain
+  Detailed attributes, multiplicities, and
+  foreign-key relationships are shown in the
+  companion Backend Domain Class Diagram.
+end note
+
+legend left
+  |= Stereotype |= Meaning |
+  | <<control>> | Request/use-case coordination |
+  | <<service>> | Reusable business or AI logic |
+  | <<gateway>> | Database, cache, or queue access |
+  | <<worker>> | Asynchronous background processor |
+  | <<entity>> | PostgreSQL persistent domain |
+  | <<document>> | MongoDB cached document model |
+  | <<external>> | External platform or data source |
+endlegend
+
+@enduml

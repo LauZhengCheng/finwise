@@ -34,13 +34,17 @@ class _SalaryDepositScreenState extends State<SalaryDepositScreen> {
     super.dispose();
   }
 
+  bool _navigating = false;
+
   void _onNext() {
+    if (_navigating) return;
     if (!_formKey.currentState!.validate()) return;
 
     final amount = double.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0) return;
 
-    context.push('/salary-preview', extra: amount);
+    _navigating = true;
+    context.push('/salary-preview', extra: amount).then((_) => _navigating = false);
   }
 
   @override

@@ -2,9 +2,8 @@
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : spending_chart.dart
 // Description   : Spending summary card with donut chart.
-//                 Donut slices = each spending vault's allocation %.
-//                 Total Safe-to-Spend number is shown as the dashboard
-//                 hero above — this card shows the breakdown only.
+//                 Donut slices = each spending vault's actual spent amount.
+//                 Shows real-time spending breakdown by category.
 // First Written : 06-06-2026
 // Edited on     : 10-06-2026
 // ============================================
@@ -16,8 +15,9 @@ import '../../../models/vault_model.dart';
 
 class SpendingChartCard extends StatelessWidget {
   final List<VaultModel> vaults;
+  final VoidCallback? onViewAll;
 
-  const SpendingChartCard({super.key, required this.vaults});
+  const SpendingChartCard({super.key, required this.vaults, this.onViewAll});
 
   List<VaultModel> get _spendingVaults =>
       vaults.where((v) => v.vaultType == 'vault').toList();
@@ -48,15 +48,32 @@ class SpendingChartCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section label
-          const Text(
-            'SPENDING SUMMARY',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.5,
-              color: AppTheme.textSecondary,
-            ),
+          // Section label + View All button
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'SPENDING SUMMARY',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+              if (onViewAll != null)
+                TextButton.icon(
+                  onPressed: onViewAll,
+                  icon: const Icon(Icons.receipt_long_rounded, size: 12),
+                  label: const Text('View All'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.textHint,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                ),
+            ],
           ),
 
           const SizedBox(height: 20),
@@ -68,6 +85,8 @@ class SpendingChartCard extends StatelessWidget {
   }
 
   Widget _buildChart(List<VaultModel> spending) {
+    final totalSpent = spending.fold<double>(0, (s, v) => s + v.spentAmount);
+
     return Row(
       children: [
         // Donut chart
@@ -81,7 +100,7 @@ class SpendingChartCard extends StatelessWidget {
                 PieChartData(
                   sections: spending.map((v) {
                     return PieChartSectionData(
-                      value: v.allocationPercentage.toDouble(),
+                      value: v.spentAmount > 0 ? v.spentAmount : 0.01,
                       color: _hexColor(v.vaultColour),
                       radius: 42,
                       title: '',
@@ -100,16 +119,16 @@ class SpendingChartCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${spending.length}',
+                    totalSpent > 0 ? 'RM ${totalSpent.toStringAsFixed(0)}' : 'RM 0',
                     style: const TextStyle(
-                      fontSize: 20,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textPrimary,
                       height: 1.0,
                     ),
                   ),
                   const Text(
-                    'vaults',
+                    'spent',
                     style: TextStyle(
                       fontSize: 10,
                       color: AppTheme.textHint,
@@ -130,34 +149,35 @@ class SpendingChartCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: spending.map((v) {
               final colour = _hexColor(v.vaultColour);
+              final pct = totalSpent > 0 ? (v.spentAmount / totalSpent * 100).round() : 0;
               return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
                     Container(
-                      width: 8,
-                      height: 8,
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: colour,
-                        shape: BoxShape.circle,
+                        color: colour.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$pct%',
+                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: colour),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         v.name,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textPrimary,
-                        ),
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Text(
-                      '${v.allocationPercentage}%',
+                      'RM ${v.spentAmount.toStringAsFixed(0)}',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: colour,
                       ),

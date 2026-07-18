@@ -9,10 +9,11 @@
 
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../config/app_config.dart';
 
 class AuthApi {
   final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.100.15:3000/api';
+  final String _baseUrl = AppConfig.baseUrl;
 
   String? get _token =>
       Supabase.instance.client.auth.currentSession?.accessToken;

@@ -2,15 +2,16 @@
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : transaction_history_screen.dart
 // Description   : Full transaction history — all past transactions
-//                 newest first, with status badges and vault info.
+//                 newest first, with status badges, search, and filter.
 // First Written : 10-06-2026
-// Edited on     : 10-06-2026
+// Edited on     : 17-06-2026
 // ============================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_theme.dart';
 import '../../services/api/transaction_api.dart';
+import '../../widgets/shimmer_loading.dart';
 
 // Incremented by MainScaffold each time the Transactions tab is tapped —
 // causes the screen to silently reload even though it stays mounted.
@@ -28,6 +29,20 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   List<Map<String, dynamic>> _transactions = [];
   bool _loading = true;
   String? _error;
+  String _searchQuery = '';
+  String _statusFilter = 'all';
+
+  List<Map<String, dynamic>> get _filtered {
+    return _transactions.where((tx) {
+      final matchesStatus = _statusFilter == 'all' ||
+          tx['status'] == _statusFilter;
+      final merchant =
+          (tx['merchant_name'] as String? ?? '').toLowerCase();
+      final matchesSearch = _searchQuery.isEmpty ||
+          merchant.contains(_searchQuery.toLowerCase());
+      return matchesStatus && matchesSearch;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -38,11 +53,13 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   Future<void> _load() async {
     try {
       final data = await TransactionApi().getHistory();
+      if (!mounted) return;
       setState(() {
         _transactions = data;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -69,16 +86,72 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
-                child: Text(
-                  'Transactions',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                    letterSpacing: -0.8,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 20, 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const Text(
+                      'Transactions',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // ── Search bar ─────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  style: const TextStyle(
+                      color: AppTheme.textPrimary, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Search merchants...',
+                    hintStyle: const TextStyle(
+                        color: AppTheme.textHint, fontSize: 14),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        color: AppTheme.textSecondary, size: 20),
+                    filled: true,
+                    fillColor: AppTheme.cardColor,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                            color: AppTheme.glassBorderColor)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                            color: AppTheme.glassBorderColor)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                            color: AppTheme.primaryColor)),
                   ),
+                ),
+              ),
+              // ── Filter chips ───────────────────────────────
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Row(
+                  children: ['all', 'approved', 'blocked', 'cancelled']
+                      .map((s) => _FilterChip(
+                            label: s == 'all'
+                                ? 'All'
+                                : s[0].toUpperCase() + s.substring(1),
+                            selected: _statusFilter == s,
+                            onTap: () =>
+                                setState(() => _statusFilter = s),
+                          ))
+                      .toList(),
                 ),
               ),
               Expanded(child: _buildBody()),
@@ -91,8 +164,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.primaryColor),
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+        child: SkeletonTransactionList(count: 8),
       );
     }
     if (_error != null) {
@@ -126,7 +200,8 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
         ),
       );
     }
-    if (_transactions.isEmpty) {
+    final visible = _filtered;
+    if (visible.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -135,15 +210,19 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                 size: 56,
                 color: AppTheme.silverMuted.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
-            const Text('No transactions yet',
-                style: TextStyle(
+            Text(_transactions.isEmpty
+                    ? 'No transactions yet'
+                    : 'No results found',
+                style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary)),
             const SizedBox(height: 8),
-            const Text('Your spending history will appear here',
-                style:
-                    TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            Text(_transactions.isEmpty
+                    ? 'Your spending history will appear here'
+                    : 'Try a different search or filter',
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textSecondary)),
           ],
         ),
       );
@@ -151,7 +230,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
 
     // Group by date
     final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final tx in _transactions) {
+    for (final tx in visible) {
       final date = _dateLabel(tx['created_at'] as String);
       grouped.putIfAbsent(date, () => []).add(tx);
     }
@@ -229,10 +308,21 @@ class _TransactionTile extends StatelessWidget {
     final status = tx['status'] as String? ?? 'approved';
     final amount = (tx['amount'] as num).toDouble();
     final merchantName = tx['merchant_name'] as String? ?? 'Unknown';
-    final merchantCategory = tx['merchant_category'] as String?;
     final vaultName = vault?['name'] as String? ?? '—';
     final time = _formatTime(tx['created_at'] as String);
-    final accentColor = _categoryColor(merchantCategory);
+    final txType = tx['transaction_type'] as String? ?? 'expense';
+    final isIncome = txType == 'income';
+    final isTransfer = txType == 'transfer';
+    final isIncomingTransfer = isTransfer && merchantName.startsWith('From:');
+    final note = tx['note'] as String?;
+    final moneyMoved = status == 'approved';
+
+    final amountPrefix = !moneyMoved ? '' : (isIncome || isIncomingTransfer) ? '+ ' : '- ';
+    final amountColor = !moneyMoved
+        ? AppTheme.silverMuted
+        : (isIncome || isIncomingTransfer)
+            ? AppTheme.successColor
+            : AppTheme.errorColor;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -242,9 +332,6 @@ class _TransactionTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Left accent stripe keyed to vault category
-            Container(width: 4, color: accentColor),
-
             // Card content
             Expanded(
               child: Padding(
@@ -257,12 +344,12 @@ class _TransactionTile extends StatelessWidget {
                       height: 44,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _statusColor(status).withValues(alpha: 0.12),
+                        color: amountColor.withValues(alpha: 0.12),
                       ),
                       child: Icon(
-                        _statusIcon(status),
+                        _txIcon(status, isIncome, isTransfer, isIncomingTransfer),
                         size: 20,
-                        color: _statusColor(status),
+                        color: amountColor,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -283,16 +370,30 @@ class _TransactionTile extends StatelessWidget {
                           const SizedBox(height: 3),
                           Row(
                             children: [
-                              Text(
-                                vaultName,
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.textSecondary),
+                              Flexible(
+                                child: Text(
+                                  vaultName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textSecondary),
+                                ),
                               ),
                               const SizedBox(width: 6),
                               _StatusBadge(status: status),
                             ],
                           ),
+                          if (note != null && note.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              note,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textHint,
+                                  fontStyle: FontStyle.italic),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -302,15 +403,11 @@ class _TransactionTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          status == 'blocked' || status == 'cancelled'
-                              ? 'RM ${amount.toStringAsFixed(2)}'
-                              : '- RM ${amount.toStringAsFixed(2)}',
+                          '${amountPrefix}RM ${amount.toStringAsFixed(2)}',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: status == 'approved'
-                                ? AppTheme.successColor
-                                : AppTheme.silverMuted,
+                            color: amountColor,
                           ),
                         ),
                         const SizedBox(height: 3),
@@ -331,41 +428,12 @@ class _TransactionTile extends StatelessWidget {
     );
   }
 
-  Color _categoryColor(String? category) {
-    if (category == null || category.isEmpty) return AppTheme.silverMuted;
-    final c = category.toLowerCase();
-    if (c.contains('food') || c.contains('dining') || c.contains('grocer') || c.contains('essential')) return AppTheme.vaultGreen;
-    if (c.contains('transport') || c.contains('petrol') || c.contains('grab') || c.contains('fuel')) return AppTheme.vaultBlue;
-    if (c.contains('entertainment') || c.contains('gaming') || c.contains('cinema') || c.contains('streaming')) return AppTheme.vaultPurple;
-    if (c.contains('health') || c.contains('medical') || c.contains('pharmacy') || c.contains('fitness')) return AppTheme.vaultTeal;
-    if (c.contains('shopping') || c.contains('fashion') || c.contains('clothing')) return AppTheme.vaultOrange;
-    if (c.contains('education') || c.contains('course') || c.contains('book')) return AppTheme.vaultBlue;
-    if (c.contains('parent') || c.contains('support') || c.contains('family')) return AppTheme.vaultTeal;
-    if (c.contains('saving') || c.contains('fund') || c.contains('emergency')) return AppTheme.primaryColor;
-    // Hash fallback — unknown categories get a consistent colour
-    const colors = [
-      AppTheme.vaultGreen, AppTheme.vaultBlue, AppTheme.vaultOrange,
-      AppTheme.vaultPurple, AppTheme.vaultTeal,
-    ];
-    return colors[category.hashCode.abs() % colors.length];
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'approved':  return AppTheme.successColor;
-      case 'blocked':   return AppTheme.errorColor;
-      case 'cancelled': return AppTheme.silverMuted;
-      default:          return AppTheme.primaryColor;
-    }
-  }
-
-  IconData _statusIcon(String status) {
-    switch (status) {
-      case 'approved':  return Icons.check_circle_rounded;
-      case 'blocked':   return Icons.block_rounded;
-      case 'cancelled': return Icons.cancel_rounded;
-      default:          return Icons.receipt_rounded;
-    }
+IconData _txIcon(String status, bool isIncome, bool isTransfer, bool isIncomingTransfer) {
+    if (status == 'blocked')    return Icons.block_rounded;
+    if (status == 'cancelled')  return Icons.cancel_rounded;
+    if (isIncomingTransfer)     return Icons.call_received_rounded;
+    if (isTransfer)             return Icons.send_rounded;
+    return isIncome ? Icons.arrow_circle_down_rounded : Icons.check_circle_rounded;
   }
 
   String _formatTime(String isoString) {
@@ -373,6 +441,47 @@ class _TransactionTile extends StatelessWidget {
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+}
+
+// ── Filter chip ───────────────────────────────────────────────────────
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primaryColor
+              : AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppTheme.primaryColor
+                : AppTheme.glassBorderColor,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected
+                ? const Color(0xFF0A0800)
+                : AppTheme.textSecondary,
+          ),
+        ),
+      ),
+    );
   }
 }
 

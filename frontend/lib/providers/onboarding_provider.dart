@@ -106,7 +106,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
             : null,
       );
 
-      final ariaMessage = MessageModel(
+      final aionMessage = MessageModel(
         content: response['message'],
         isUser: false,
         timestamp: DateTime.now(),
@@ -134,7 +134,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       state = state.copyWith(
         messages: [
           ...state.messages,
-          ariaMessage,
+          aionMessage,
           if (vaultCard != null) vaultCard,
         ],
         isLoading: false,

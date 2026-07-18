@@ -1,7 +1,7 @@
 // ============================================
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : goal_guardian_popup.dart
-// Description   : Goal Guardian advisory popup — shows Aria's alert
+// Description   : Goal Guardian advisory popup — shows Aion's alert
 //                 message with Proceed or Cancel options
 // First Written : 06-06-2026
 // Edited on     : 06-06-2026
@@ -23,7 +23,7 @@ class GoalGuardianPopup extends StatelessWidget {
   });
 
   String get _alertMessage =>
-      result['alert_message'] as String? ?? 'Aria has flagged this transaction.';
+      result['alert_message'] as String? ?? 'Aion has flagged this transaction.';
 
   String get _severity =>
       result['alert_severity'] as String? ?? 'medium';
@@ -88,8 +88,8 @@ class GoalGuardianPopup extends StatelessWidget {
           // Title
           Text(
             _severity == 'high'
-                ? 'Aria has a concern'
-                : 'Heads up from Aria',
+                ? 'Aion has a concern'
+                : 'Heads up from Aion',
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -98,7 +98,7 @@ class GoalGuardianPopup extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Aria's message bubble
+          // Aion's message bubble
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),

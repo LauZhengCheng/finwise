@@ -1,0 +1,345 @@
+@startuml FinWise_Backend_Domain_Class_Diagram
+title FinWise — Backend Persistent Domain Class Diagram
+
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam ArrowColor #51483A
+skinparam ClassBorderColor #51483A
+skinparam PackageBorderColor #8A774F
+
+package "Supabase PostgreSQL" #FFF8E8 {
+  class Profile <<entity>> {
+    +id: UUID {PK}
+    +fullName: String
+    +email: String {unique}
+    +phoneNumber: String {unique}
+    +fcmToken: String
+    +chatOpenedAt: DateTime
+    +createdAt: DateTime
+    +updatedAt: DateTime
+  }
+
+  class OnboardingProfile <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK, unique}
+    +monthlyIncome: Decimal
+    +financialGoals: JSON
+    +spendingHabit: String
+    +riskLevel: String
+    +lifeSituation: String
+    +financialChallenges: String
+    +insuranceCoverage: JSON
+  }
+
+  class AIFinancialProfile <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK, unique}
+    +behavioralClassification: String
+    +recommendedAllocation: JSON
+    +aiReasoning: String
+    +keyInsights: JSON
+  }
+
+  class Vault <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +name: String
+    +categoryKey: String
+    +vaultType: VaultType
+    +allocationPercentage: Decimal
+    +allocatedAmount: Decimal
+    +currentBalance: Decimal
+    +spentAmount: Decimal
+    +vaultColour: String
+    +vaultIcon: String
+    +linkedGoal: String
+    +goalTargetAmount: Decimal
+    +isActive: Boolean
+    +completedAt: DateTime
+    +isArchived: Boolean
+  }
+
+  class VaultTransfer <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +fromVaultId: UUID {FK}
+    +toVaultId: UUID {FK}
+    +amount: Decimal
+    +transferType: TransferType
+    +reason: String
+    +triggeredByTransactionId: UUID {FK}
+    +createdAt: DateTime
+  }
+
+  class MerchantQRCode <<entity>> {
+    +id: UUID {PK}
+    +merchantName: String
+    +merchantId: String {unique}
+    +defaultAmount: Decimal
+    +qrPayload: String {unique}
+    +qrType: QRType
+  }
+
+  class Transaction <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +vaultId: UUID {FK}
+    +merchantQrId: UUID {FK}
+    +amount: Decimal
+    +merchantName: String
+    +merchantCategory: String
+    +transactionType: TransactionType
+    +status: TransactionStatus
+    +blockReason: String
+    +note: String
+    +goalConflictDetected: Boolean
+    +goalGuardianMessage: String
+    +userOverrodeGuardian: Boolean
+    +aiCategorisationAttempts: Integer
+    +aiCategorisationFailed: Boolean
+    +createdAt: DateTime
+  }
+
+  class IncomeInjection <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +amount: Decimal
+    +allocationSnapshot: JSON
+    +carryoverSnapshot: JSON
+    +status: IncomeStatus
+    +injectionDate: DateTime
+    +notes: String
+  }
+
+  class AILog <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +interactionType: InteractionType
+    +userMessage: String
+    +aiResponse: JSON
+    +rawAiResponse: JSON
+    +contextSnapshot: JSON
+    +transactionId: UUID {FK}
+    +validationStatus: ValidationStatus
+    +isProactive: Boolean
+    +notificationSent: Boolean
+    +notificationRead: Boolean
+    +sessionSummary: String
+    +embedding: Vector(768)
+    +createdAt: DateTime
+  }
+
+  class AllocationHistory <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +previousAllocation: JSON
+    +newAllocation: JSON
+    +changeReason: String
+    +triggeredBy: AllocationTrigger
+    +createdAt: DateTime
+  }
+
+  class Debt <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +name: String
+    +debtType: DebtType
+    +lender: String
+    +principalAmount: Decimal
+    +currentBalance: Decimal
+    +interestRate: Decimal
+    +interestType: InterestType
+    +promotionalRateUntil: Date
+    +minimumPayment: Decimal
+    +currentMonthlyPayment: Decimal
+    +termMonths: Integer
+    +remainingMonths: Integer
+    +dueDate: Integer
+    +isSecured: Boolean
+    +isActive: Boolean
+    +paidOffDate: Date
+  }
+
+  class Investment <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +assetName: String
+    +ticker: String
+    +category: AssetCategory
+    +units: Decimal
+    +purchasePrice: Decimal
+    +currentPrice: Decimal
+    +purchaseDate: Date
+    +isActive: Boolean
+  }
+
+  class Bill <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +name: String
+    +amount: Decimal
+    +dueDate: Date
+    +frequency: BillFrequency
+    +category: String
+    +vaultId: UUID {FK}
+    +notificationDaysBefore: Integer
+    +isPaid: Boolean
+    +isActive: Boolean
+  }
+
+  class P2PTransfer <<entity>> {
+    +id: UUID {PK}
+    +senderId: UUID {FK}
+    +receiverId: UUID {FK}
+    +amount: Decimal
+    +sourceVaultId: UUID {FK}
+    +note: String
+    +status: TransferStatus
+    +createdAt: DateTime
+  }
+
+  class BillPaymentHistory <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +billId: UUID {FK}
+    +billName: String
+    +amount: Decimal
+    +dueDate: Date
+    +paidAt: DateTime
+    +wasOnTime: Boolean
+  }
+
+  class DebtBalanceSnapshot <<entity>> {
+    +id: UUID {PK}
+    +userId: UUID {FK}
+    +debtId: UUID {FK}
+    +previousBalance: Decimal
+    +newBalance: Decimal
+    +changeAmount: Decimal
+    +direction: BalanceDirection
+    +recordedAt: DateTime
+  }
+}
+
+package "MongoDB Cache and Content Store" #EDF6FF {
+  class MarketDataCache <<document>> {
+    +symbol: String {unique}
+    +type: MarketDataType
+    +price: Number
+    +changePct24h: Number
+    +high24h: Number
+    +low24h: Number
+    +volume: Number
+    +constituents: String[*]
+    +updatedAt: DateTime
+  }
+
+  class VolatilityCache <<document>> {
+    +ticker: String {unique}
+    +category: AssetCategory
+    +volatility: Number
+    +updatedAt: DateTime
+  }
+
+  class NewsArticle <<document>> {
+    +title: String
+    +summary: String
+    +sentiment: Sentiment
+    +source: String
+    +publishedAt: DateTime
+    +url: String {unique}
+    +imageUrl: String
+    +isBreaking: Boolean
+    +tags: String[*]
+    +fetchedAt: DateTime
+  }
+
+  class FDRate <<document>> {
+    +bank: String
+    +product: String
+    +minAmount: Number
+    +tenureMonths: Number
+    +interestRate: Number
+    +applyUrl: String
+    +logoUrl: String
+    +sourceUrl: String
+    +isIslamic: Boolean
+    +scrapedAt: DateTime
+  }
+
+  class Deal <<document>> {
+    +merchant: String
+    +dealTitle: String
+    +category: String
+    +discountPct: Number
+    +maxCashback: Number
+    +validUntil: Date
+    +isNeed: Boolean
+    +isWant: Boolean
+    +aionNote: String
+    +applyUrl: String
+    +source: String
+    +sourceUrl: String
+    +scrapedAt: DateTime
+  }
+
+  class StockListing <<document>> {
+    +ticker: String {unique}
+    +name: String
+    +exchange: String
+    +category: ListingCategory
+    +fetchedAt: DateTime
+  }
+}
+
+' Profile-owned aggregates
+Profile "1" *-- "0..1" OnboardingProfile
+Profile "1" *-- "0..1" AIFinancialProfile
+Profile "1" *-- "0..*" Vault
+Profile "1" *-- "0..*" VaultTransfer
+Profile "1" *-- "0..*" Transaction
+Profile "1" *-- "0..*" IncomeInjection
+Profile "1" *-- "0..*" AILog
+Profile "1" *-- "0..*" AllocationHistory
+Profile "1" *-- "0..*" Debt
+Profile "1" *-- "0..*" Investment
+Profile "1" *-- "0..*" Bill
+Profile "1" *-- "0..*" BillPaymentHistory
+Profile "1" *-- "0..*" DebtBalanceSnapshot
+
+' Transaction and vault relationships
+Vault "1" <-- "0..*" Transaction : charged to
+MerchantQRCode "0..1" <-- "0..*" Transaction : originates from
+Transaction "0..1" <-- "0..*" AILog : analysed for
+Transaction "0..1" <-- "0..*" VaultTransfer : triggers
+Vault "1" <-- "0..*" VaultTransfer : source
+Vault "1" <-- "0..*" VaultTransfer : destination
+Vault "0..1" <-- "0..*" Bill : assigned to
+
+' P2P transfer roles
+Profile "1" <-- "0..*" P2PTransfer : sender
+Profile "1" <-- "0..*" P2PTransfer : receiver
+Vault "1" <-- "0..*" P2PTransfer : source vault
+
+' Historical records
+Bill "1" *-- "0..*" BillPaymentHistory
+Debt "0..1" o-- "0..*" DebtBalanceSnapshot
+
+note bottom of MarketDataCache
+  MongoDB classes are cache/content documents and do not
+  have foreign-key associations with the user-owned
+  PostgreSQL aggregate.
+end note
+
+legend left
+  *--  composition / lifecycle ownership
+  o--  aggregation / historical reference
+  <--  navigable foreign-key association
+endlegend
+
+@enduml

@@ -9,7 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const authenticateUser = require('../middleware/auth');
-const { transferVault } = require('../controllers/vaultController');
+const { transferVault, archiveGoal, unarchiveGoal } = require('../controllers/vaultController');
 
 router.get('/status', (req, res) => {
   res.json({ success: true, message: 'Vaults route working' });
@@ -20,6 +20,20 @@ router.get('/status', (req, res) => {
 router.post('/transfer',
   (req, res, next) => authenticateUser(req, res, next),
   (req, res) => transferVault(req, res)
+);
+
+// POST /api/vaults/:id/archive
+// Hide a completed goal from the dashboard
+router.post('/:id/archive',
+  (req, res, next) => authenticateUser(req, res, next),
+  (req, res) => archiveGoal(req, res)
+);
+
+// POST /api/vaults/:id/unarchive
+// Restore an archived goal to the dashboard
+router.post('/:id/unarchive',
+  (req, res, next) => authenticateUser(req, res, next),
+  (req, res) => unarchiveGoal(req, res)
 );
 
 module.exports = router;

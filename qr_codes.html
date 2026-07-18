@@ -68,6 +68,11 @@
       background: #f0faf3;
     }
 
+    .card.deposit {
+      border: 2px solid #1a73e8;
+      background: #f0f6ff;
+    }
+
     /* Category badge above the QR */
     .badge {
       font-size: 11px;
@@ -87,6 +92,7 @@
     .badge.education  { background: #e8f0fe; color: #1967d2; }
     .badge.large      { background: #fce8e6; color: #b31412; }
     .badge.salary     { background: #e6f4ea; color: #137333; }
+    .badge.deposit    { background: #e8f4fd; color: #1558a8; }
 
     /* The div where QRCode.js draws the QR image */
     .qr-container {
@@ -120,6 +126,11 @@
 
     .amount.salary-tag {
       color: #137333;
+      font-weight: 600;
+    }
+
+    .amount.deposit-tag {
+      color: #1558a8;
       font-weight: 600;
     }
   </style>
@@ -244,6 +255,15 @@
             payload: '{"merchant_name":"Simulated Employer Sdn Bhd","merchant_id":"SIM-SAL-001","qr_type":"salary_deposit"}' },
         ]
       },
+
+      // ── GENERAL DEPOSIT ──────────────────────────────────────────────
+      {
+        section: 'General Deposit',
+        items: [
+          { name: 'FinWise General Deposit', amount: null, badge: 'deposit', label: 'Deposit', deposit: true,
+            payload: '{"merchant_name":"FinWise General Deposit","merchant_id":"SIM-GEN-001","qr_type":"general_deposit"}' },
+        ]
+      },
     ];
 
     /*
@@ -276,7 +296,7 @@
       section.items.forEach(item => {
         // Outer card
         const card = document.createElement('div');
-        card.className = item.salary ? 'card salary' : 'card';
+        card.className = item.salary ? 'card salary' : item.deposit ? 'card deposit' : 'card';
 
         // Category badge
         const badge = document.createElement('span');
@@ -301,8 +321,8 @@
 
         // Amount label (or "Enter your salary amount" for salary QR)
         const amountEl = document.createElement('p');
-        amountEl.className = item.salary ? 'amount salary-tag' : 'amount';
-        amountEl.textContent = item.amount ?? 'Enter your salary amount';
+        amountEl.className = item.salary ? 'amount salary-tag' : item.deposit ? 'amount deposit-tag' : 'amount';
+        amountEl.textContent = item.amount ?? (item.salary ? 'Enter your salary amount' : 'Choose vault + enter amount');
         card.appendChild(amountEl);
 
         grid.appendChild(card);
@@ -318,7 +338,7 @@
           width: 160,
           height: 160,
           colorDark: '#202124',
-          colorLight: item.salary ? '#f0faf3' : '#ffffff',
+          colorLight: item.salary ? '#f0faf3' : item.deposit ? '#f0f6ff' : '#ffffff',
           correctLevel: QRCode.CorrectLevel.M,
         });
       });

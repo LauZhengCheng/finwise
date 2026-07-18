@@ -2,7 +2,7 @@
 -- FYP Neobanking System — Complete Database Schema
 -- Author: Lau Zheng Cheng (TP071393)
 -- Created: 2026
--- Last Updated: 11-06-2026
+-- Last Updated: 17-06-2026
 -- ============================================
 -- HOW TO RESET:
 --   1. Drop all tables in Supabase (Table Editor or SQL Editor)
@@ -11,6 +11,9 @@
 
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Enable pgvector for RAG embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================
 -- FUNCTION: Auto-update updated_at timestamp
@@ -31,7 +34,9 @@ CREATE TABLE profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
-    phone_number TEXT,
+    phone_number TEXT UNIQUE,
+    fcm_token TEXT,
+    chat_opened_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -119,6 +124,8 @@ CREATE TABLE vaults (
     linked_goal TEXT,
     goal_target_amount NUMERIC CHECK (goal_target_amount >= 0),
     is_active BOOLEAN NOT NULL DEFAULT true,
+    completed_at TIMESTAMPTZ,
+    is_archived BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -179,7 +186,8 @@ CREATE TABLE vault_transfers (
 -- TABLE 6: merchant_qr_codes
 -- Purpose: Simulated merchant QR database
 -- qr_type = 'merchant'        → spending transaction
--- qr_type = 'salary_deposit'  → income injection
+-- qr_type = 'salary_deposit'  → income injection (Traffic Controller)
+-- qr_type = 'general_deposit' → deposit to specific vault (no Traffic Controller)
 -- ============================================
 CREATE TABLE merchant_qr_codes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -188,7 +196,7 @@ CREATE TABLE merchant_qr_codes (
     default_amount NUMERIC CHECK (default_amount >= 0),
     qr_payload TEXT NOT NULL UNIQUE,
     qr_type TEXT NOT NULL CHECK (
-        qr_type IN ('merchant', 'salary_deposit')
+        qr_type IN ('merchant', 'salary_deposit', 'general_deposit')
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -216,6 +224,7 @@ CREATE TABLE transactions (
         status IN ('approved', 'blocked', 'cancelled')
     ),
     block_reason TEXT,
+    note TEXT,
     goal_conflict_detected BOOLEAN NOT NULL DEFAULT false,
     goal_guardian_message TEXT,
     user_overrode_guardian BOOLEAN NOT NULL DEFAULT false,
@@ -241,6 +250,7 @@ CREATE TABLE income_injections (
     amount NUMERIC NOT NULL CHECK (amount > 0),
     allocation_snapshot JSONB NOT NULL,
     carryover_snapshot JSONB,
+    status TEXT NOT NULL DEFAULT 'applied',  -- 'pending' | 'applied' | 'cancelled'
     injection_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     notes TEXT
 );
@@ -285,8 +295,46 @@ CREATE TABLE ai_logs (
     notification_read BOOLEAN NOT NULL DEFAULT false,
     tokens_used INTEGER,
     response_time_ms INTEGER,
+    session_summary TEXT,
+    embedding VECTOR(768),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ============================================
+-- FUNCTION: Cosine similarity search for RAG
+-- Finds the most relevant past session summaries
+-- for a given query embedding, filtered by user.
+-- ============================================
+CREATE OR REPLACE FUNCTION match_session_embeddings(
+    query_embedding VECTOR(768),
+    match_user_id UUID,
+    match_threshold FLOAT DEFAULT 0.72,
+    match_count INT DEFAULT 3
+)
+RETURNS TABLE (
+    id UUID,
+    session_summary TEXT,
+    similarity FLOAT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        al.id,
+        al.session_summary,
+        1 - (al.embedding <=> query_embedding) AS similarity,
+        al.created_at
+    FROM ai_logs al
+    WHERE al.user_id = match_user_id
+      AND al.embedding IS NOT NULL
+      AND al.session_summary IS NOT NULL
+      AND 1 - (al.embedding <=> query_embedding) > match_threshold
+    ORDER BY al.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
 
 -- ============================================
 -- TABLE 10: allocation_history
@@ -521,4 +569,160 @@ VALUES
     'merchant'),
     ('Simulated Employer Sdn Bhd', 'SIM-SAL-001', NULL,
     '{"merchant_name":"Simulated Employer Sdn Bhd","merchant_id":"SIM-SAL-001","qr_type":"salary_deposit"}',
-    'salary_deposit');
+    'salary_deposit'),
+    ('FinWise General Deposit', 'SIM-GEN-001', NULL,
+    '{"merchant_name":"FinWise General Deposit","merchant_id":"SIM-GEN-001","qr_type":"general_deposit"}',
+    'general_deposit');
+
+-- ============================================
+-- TABLE 11: debts
+-- Purpose: Comprehensive debt management — real-world fields for
+--          principal, interest, APR, collateral, term, payment schedule.
+--          Aion uses this data for payoff strategy (avalanche/snowball),
+--          health score calculation, and cross-referencing with vault allocations.
+-- ============================================
+CREATE TABLE debts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  debt_type TEXT NOT NULL CHECK (debt_type IN ('personal_loan', 'credit_card', 'bnpl', 'car_loan', 'home_loan', 'student_loan', 'other')),
+  lender TEXT,
+  principal_amount DECIMAL(12,2) NOT NULL,
+  current_balance DECIMAL(12,2) NOT NULL,
+  interest_rate DECIMAL(5,2),
+  interest_type TEXT DEFAULT 'fixed' CHECK (interest_type IN ('fixed', 'variable', 'promotional')),
+  promotional_rate_until DATE,
+  minimum_payment DECIMAL(10,2),
+  current_monthly_payment DECIMAL(10,2),
+  term_months INTEGER,
+  remaining_months INTEGER,
+  start_date DATE,
+  maturity_date DATE,
+  due_date INTEGER CHECK (due_date BETWEEN 1 AND 31),
+  is_secured BOOLEAN DEFAULT false,
+  collateral TEXT,
+  is_active BOOLEAN DEFAULT true,
+  paid_off_date DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own debts" ON debts FOR ALL USING (auth.uid() = user_id);
+GRANT ALL ON public.debts TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.debts TO authenticated;
+
+-- ============================================
+-- TABLE 12: investments
+-- ============================================
+CREATE TABLE investments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  asset_name TEXT NOT NULL,
+  ticker TEXT,
+  category TEXT NOT NULL CHECK (category IN ('stocks', 'crypto', 'etf')),
+  units DECIMAL(18,8) NOT NULL,
+  purchase_price DECIMAL(12,2) NOT NULL,
+  current_price DECIMAL(12,2),
+  purchase_date DATE,
+  notes TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE investments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own investments" ON investments FOR ALL USING (auth.uid() = user_id);
+GRANT ALL ON public.investments TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.investments TO authenticated;
+
+-- ============================================
+-- TABLE 13: bills
+-- ============================================
+CREATE TABLE bills (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  due_date DATE NOT NULL,
+  frequency TEXT NOT NULL CHECK (frequency IN ('monthly', 'quarterly', 'annually')),
+  category TEXT,
+  vault_id UUID REFERENCES vaults(id),
+  notification_days_before INTEGER DEFAULT 3,
+  is_paid BOOLEAN DEFAULT false,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own bills" ON bills FOR ALL USING (auth.uid() = user_id);
+GRANT ALL ON public.bills TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.bills TO authenticated;
+
+
+-- ============================================
+-- TABLE 16: p2p_transfers
+-- ============================================
+CREATE TABLE p2p_transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id UUID REFERENCES profiles(id),
+  receiver_id UUID REFERENCES profiles(id),
+  amount DECIMAL(10,2) NOT NULL,
+  source_vault_id UUID REFERENCES vaults(id),
+  note TEXT,
+  status TEXT DEFAULT 'completed' CHECK (status IN ('pending', 'completed', 'failed')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE p2p_transfers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own transfers" ON p2p_transfers FOR ALL USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
+GRANT ALL ON public.p2p_transfers TO service_role;
+GRANT SELECT, INSERT ON public.p2p_transfers TO authenticated;
+
+-- ============================================
+-- TABLE: bill_payment_history
+-- Purpose: Tracks each bill payment cycle for FHN health score
+-- Records whether bill was paid on time or late
+-- ============================================
+CREATE TABLE bill_payment_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    bill_id UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+    bill_name TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    due_date DATE NOT NULL,
+    paid_at TIMESTAMPTZ DEFAULT NOW(),
+    was_on_time BOOLEAN NOT NULL DEFAULT true
+);
+
+ALTER TABLE bill_payment_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users see own bill history" ON bill_payment_history FOR ALL USING (auth.uid() = user_id);
+GRANT ALL ON public.bill_payment_history TO service_role;
+GRANT SELECT, INSERT ON public.bill_payment_history TO authenticated;
+
+-- ============================================
+-- TABLE: debt_balance_snapshots
+-- Purpose: Tracks debt balance changes over time for FHN health score
+-- Records each manual update to detect trending direction
+-- ============================================
+CREATE TABLE debt_balance_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    debt_id UUID REFERENCES debts(id) ON DELETE SET NULL,
+    previous_balance DECIMAL(12,2),
+    new_balance DECIMAL(12,2) NOT NULL,
+    change_amount DECIMAL(12,2),
+    direction TEXT CHECK (direction IN ('decrease', 'increase', 'no_change')),
+    recorded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE debt_balance_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users see own debt snapshots" ON debt_balance_snapshots FOR ALL USING (auth.uid() = user_id);
+GRANT ALL ON public.debt_balance_snapshots TO service_role;
+GRANT SELECT, INSERT ON public.debt_balance_snapshots TO authenticated;
+
+-- ============================================
+-- Insurance coverage column on onboarding_profiles
+-- JSONB: { medical_health, life_takaful, personal_accident, motor_vehicle, critical_illness }
+-- ============================================
+ALTER TABLE onboarding_profiles ADD COLUMN IF NOT EXISTS insurance_coverage JSONB DEFAULT '{}';

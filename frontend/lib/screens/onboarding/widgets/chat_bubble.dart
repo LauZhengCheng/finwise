@@ -50,6 +50,7 @@ class _ChatBubbleState extends State<ChatBubble> {
   void _startTypewriter() {
     final content = widget.message.content;
     _timer = Timer.periodic(const Duration(milliseconds: 18), (timer) {
+      if (!mounted) { timer.cancel(); return; }
       if (_charIndex < content.length) {
         _charIndex++;
         // Advance past high surrogate pair to avoid broken characters

@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/app_theme.dart';
 import '../../providers/auth_provider.dart';
-//DEBUG
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -36,6 +35,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your email and password');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -43,17 +50,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       await ref.read(authProvider.notifier).signIn(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+        email: email,
+        password: password,
       );
 
-      // DEBUG — print token for API testing, remove after done
       final supabase = Supabase.instance.client;
-      print('DEBUG TOKEN: ${supabase.auth.currentSession?.accessToken}');
-
 
       // Check onboarding status before navigating
-      final userId = supabase.auth.currentUser!.id;
+      final userId = supabase.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) setState(() => _errorMessage = 'Login failed. Please try again.');
+        return;
+      }
 
       // Check if onboarding_profiles row exists
       final onboardingCheck = await supabase
@@ -64,16 +72,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       final onboardingComplete = onboardingCheck != null;
       if (mounted) {
-        context.go(onboardingComplete ? '/dashboard' : '/onboarding');
+        setState(() => _isLoading = false);
+        // Brief success flash before navigating
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Row(children: [
+            Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Welcome back!'),
+          ]),
+          backgroundColor: Color(0xFF059669),
+          duration: Duration(milliseconds: 800),
+        ));
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) context.go(onboardingComplete ? '/dashboard' : '/onboarding');
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-      });
+      final msg = e.toString().toLowerCase();
+      String friendly;
+      if (msg.contains('invalid login credentials')) {
+        friendly = 'Incorrect email or password. Please try again.';
+      } else if (msg.contains('email not confirmed')) {
+        friendly = 'Please verify your email before logging in.';
+      } else if (msg.contains('too many requests') || msg.contains('rate limit')) {
+        friendly = 'Too many attempts. Please wait a moment and try again.';
+      } else if (msg.contains('network') || msg.contains('socket')) {
+        friendly = 'No internet connection. Check your network and try again.';
+      } else if (msg.contains('user not found')) {
+        friendly = 'No account found with this email. Please register first.';
+      } else {
+        friendly = 'Something went wrong. Please try again.';
+      }
+      if (mounted) setState(() => _errorMessage = friendly);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -84,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: DecoratedBox(
         decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
         child: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

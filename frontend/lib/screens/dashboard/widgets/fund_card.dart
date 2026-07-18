@@ -14,8 +14,10 @@ import '../../../models/vault_model.dart';
 
 class FundCard extends StatelessWidget {
   final VaultModel fund;
+  final bool isArchiving;
+  final VoidCallback? onArchive;
 
-  const FundCard({super.key, required this.fund});
+  const FundCard({super.key, required this.fund, this.isArchiving = false, this.onArchive});
 
   Color get _colour {
     try {
@@ -73,7 +75,7 @@ class FundCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  isComplete ? 'COMPLETE' : 'FUND',
+                  isComplete ? 'COMPLETE' : 'GOAL',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
@@ -132,18 +134,42 @@ class FundCard extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          // Progress label
-          Text(
-            target > 0
-                ? isComplete
-                    ? 'Goal reached!'
-                    : '${(progress * 100).toInt()}% · RM ${remaining.toStringAsFixed(2)} to go'
-                : 'No goal target set',
-            style: TextStyle(
-              fontSize: 12,
-              color: isComplete ? AppTheme.primaryColor : AppTheme.textHint,
-              fontWeight: isComplete ? FontWeight.w600 : FontWeight.normal,
-            ),
+          // Progress label + inline Archive button on the same row
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  target > 0
+                      ? isComplete
+                          ? 'Goal reached!'
+                          : '${(progress * 100).toInt()}% · RM ${remaining.toStringAsFixed(2)} to go'
+                      : 'No goal target set',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isComplete ? AppTheme.primaryColor : AppTheme.textHint,
+                    fontWeight: isComplete ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (isComplete && onArchive != null)
+                isArchiving
+                  ? const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: SizedBox(width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.textHint)))
+                  : TextButton.icon(
+                      onPressed: onArchive,
+                      icon: const Icon(Icons.archive_outlined, size: 12),
+                      label: const Text('Archive'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.textHint,
+                        padding: const EdgeInsets.only(left: 8),
+                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: Size.zero,
+                      ),
+                    ),
+            ],
           ),
         ],
       ),

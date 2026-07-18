@@ -8,7 +8,10 @@
 // ============================================
 
 const supabase = require('../config/supabase');
-const { safeGeminiCall, buildOnboardingPrompt, buildReviewerPrompt, buildChatPrompt, buildSummarizationPrompt } = require('../services/geminiService');
+const { safeGeminiCall, buildOnboardingPrompt, buildReviewerPrompt, buildSummarizationPrompt } = require('../services/geminiService');
+const { runAionAgent } = require('../services/langGraphService');
+const { embedText } = require('../services/embeddingService');
+const { checkGoalCompletion } = require('../services/notificationService');
 
 // ─────────────────────────────────────────────
 // ONBOARDING CHAT
@@ -141,15 +144,15 @@ const saveOnboardingData = async (user_id, aiData) => {
     if (!profile_data.monthly_income || profile_data.monthly_income <= 0) {
       return {
         success: false,
-        error: 'Monthly budget is missing. Aria must ask for it before saving.'
+        error: 'Monthly budget is missing. Aion must ask for it before saving.'
       };
     }
 
-    // Validate allocations sum to 100
+    // Validate allocations sum to ~100 (±0.5 tolerance for Gemini rounding)
     const totalPercentage = vault_recommendations.reduce(
       (sum, v) => sum + v.allocation_percentage, 0
     );
-    if (totalPercentage !== 100) {
+    if (totalPercentage < 99.5 || totalPercentage > 100.5) {
       return {
         success: false,
         error: `Allocation percentages sum to ${totalPercentage}, not 100`
@@ -284,16 +287,18 @@ const advisoryChat = async (req, res) => {
 
     // Session boundary — set when user last opened the chat (via summarizeSession)
     // Falls back to midnight today for users who haven't triggered summarisation yet
+    const { midnightTodayMYT } = require('../utils/dateUtils');
     const sessionBoundary = aiProfile?.key_insights?.last_summarised_at
       ? new Date(aiProfile.key_insights.last_summarised_at)
-      : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+      : new Date(midnightTodayMYT());
 
     // Current session — all messages since the session boundary
+    // Includes proactive notifications + goal guardian so Aion has full context
     let currentQuery = supabase
       .from('ai_logs')
       .select('user_message, ai_response')
       .eq('user_id', user_id)
-      .eq('interaction_type', 'chat')
+      .in('interaction_type', ['chat', 'proactive', 'goal_guardian'])
       .gt('created_at', sessionBoundary.toISOString())
       .order('created_at', { ascending: true });
     const { data: todayLogs } = await currentQuery;
@@ -305,7 +310,7 @@ const advisoryChat = async (req, res) => {
       .from('ai_logs')
       .select('user_message, ai_response')
       .eq('user_id', user_id)
-      .eq('interaction_type', 'chat')
+      .in('interaction_type', ['chat', 'proactive', 'goal_guardian'])
       .lte('created_at', sessionBoundary.toISOString())
       .order('created_at', { ascending: false })
       .limit(5);
@@ -317,7 +322,16 @@ const advisoryChat = async (req, res) => {
         if (log.user_message && log.user_message !== '__INIT__') {
           history.push({ role: 'user', content: log.user_message });
         }
-        const aiMsg = log.ai_response?.message;
+        let aiMsg;
+        if (typeof log.ai_response === 'string') {
+          aiMsg = log.ai_response;
+        } else if (log.ai_response?.alert_message) {
+          aiMsg = log.ai_response.alert_message;
+        } else if (log.ai_response?.alert_user === false) {
+          aiMsg = '[Transaction approved — no concerns]';
+        } else {
+          aiMsg = log.ai_response?.message;
+        }
         if (aiMsg) history.push({ role: 'assistant', content: aiMsg });
       }
       return history;
@@ -328,14 +342,32 @@ const advisoryChat = async (req, res) => {
     const pastSessionHistory = logsToHistory((pastLogs || []).reverse());
 
     const userContext = { profile, onboardingProfile, aiProfile, vaults };
-    const prompt = buildChatPrompt(message, userContext, currentSessionHistory, pastSessionHistory);
-    const geminiResponse = await safeGeminiCall(prompt);
 
-    if (!geminiResponse.success) {
+    // Fetch pending P2P transfers for the transfer allocation flow
+    const { data: pendingTransfersRaw } = await supabase
+      .from('p2p_transfers')
+      .select('id, amount, created_at, sender:profiles!sender_id(full_name)')
+      .eq('receiver_id', user_id)
+      .eq('status', 'pending');
+
+    const pendingTransfers = (pendingTransfersRaw || []).map(t => ({
+      id: t.id,
+      amount: t.amount,
+      created_at: t.created_at,
+      sender_name: t.sender?.full_name || 'Someone',
+    }));
+
+    // Combine current + past session history for the agent
+    const chatHistory = [...pastSessionHistory, ...currentSessionHistory];
+
+    // Run the LangGraph agent — it will call tools as needed
+    const agentResponse = await runAionAgent(user_id, message, userContext, chatHistory, pendingTransfers);
+
+    if (!agentResponse.success) {
       return res.status(500).json({ success: false, message: 'AI service unavailable. Please try again.' });
     }
 
-    const aiData = geminiResponse.data;
+    const aiData = agentResponse.data;
     const aiMessage = aiData.message || "Sorry, I couldn't respond properly. Please try again.";
 
     // Save to ai_logs
@@ -369,6 +401,45 @@ const advisoryChat = async (req, res) => {
       });
     }
 
+    // Return transfer allocation to Flutter for confirmation bottom sheet.
+    // Normalise: Gemini may return old singular transfer_id — coerce to array format.
+    let transferAllocation = aiData.transfer_allocation ?? null;
+    if (transferAllocation) {
+      if (!Array.isArray(transferAllocation.transfer_ids) && transferAllocation.transfer_id) {
+        transferAllocation = {
+          ...transferAllocation,
+          transfer_ids: [transferAllocation.transfer_id],
+          total_amount: transferAllocation.amount ?? transferAllocation.total_amount ?? 0,
+        };
+      }
+      // Validate every ID against real pending transfers — blocks hallucination.
+      const ids = transferAllocation.transfer_ids || [];
+      const allValid = ids.length > 0 && ids.every((id) => pendingTransfers.some((t) => t.id === id));
+      if (allValid) {
+        // Gemini sometimes returns category_key instead of UUID for suggested_vault_id — resolve it.
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const suggestedId = transferAllocation.suggested_vault_id;
+        if (suggestedId && !uuidPattern.test(suggestedId)) {
+          const matched = (vaults || []).find(
+            (v) => v.category_key === suggestedId || v.name.toLowerCase() === suggestedId.toLowerCase()
+          );
+          if (matched) {
+            transferAllocation = {
+              ...transferAllocation,
+              suggested_vault_id: matched.id,
+              suggested_vault_name: matched.name,
+            };
+          }
+        }
+        return res.json({
+          success: true,
+          message: aiMessage,
+          transfer_allocation: transferAllocation,
+        });
+      }
+      console.log('[advisoryChat] transfer_allocation blocked — ids:', ids, '| pendingTransfers:', pendingTransfers.map(t => t.id));
+    }
+
     return res.json({ success: true, message: aiMessage });
 
   } catch (error) {
@@ -386,12 +457,12 @@ const getChatHistory = async (req, res) => {
   try {
     const user_id = req.user.id;
 
-    // Fetch last 40 rows (newest first) → 80 displayed messages max
+    // Fetch last 40 rows (newest first) — includes chat + proactive messages
     const { data: rawLogs, error } = await supabase
       .from('ai_logs')
-      .select('id, user_message, ai_response, created_at')
+      .select('id, user_message, ai_response, interaction_type, created_at')
       .eq('user_id', user_id)
-      .eq('interaction_type', 'chat')
+      .in('interaction_type', ['chat', 'proactive'])
       .order('created_at', { ascending: false })
       .limit(40);
 
@@ -400,7 +471,9 @@ const getChatHistory = async (req, res) => {
     // Reverse to chronological order for display
     const logs = (rawLogs || []).reverse();
 
-    // Flatten each log row into individual user + AI message objects
+    // Flatten each log row into individual user + AI message objects.
+    // Proactive logs: ai_response is a plain string (no user message).
+    // Chat logs: ai_response is { message: "..." }.
     const messages = [];
     for (const log of (logs || [])) {
       if (log.user_message && log.user_message !== '__INIT__') {
@@ -411,12 +484,15 @@ const getChatHistory = async (req, res) => {
           created_at: log.created_at,
         });
       }
-      const aiMsg = log.ai_response?.message;
+      const aiMsg = typeof log.ai_response === 'string'
+        ? log.ai_response
+        : log.ai_response?.message;
       if (aiMsg) {
         messages.push({
           id: `${log.id}_ai`,
           content: aiMsg,
           is_user: false,
+          is_proactive: log.interaction_type === 'proactive',
           created_at: log.created_at,
         });
       }
@@ -450,12 +526,12 @@ const summarizeSession = async (req, res) => {
     const existingSummary = aiProfile?.key_insights || null;
     const lastSummarisedAt = existingSummary?.last_summarised_at || null;
 
-    // Fetch all messages since last summarisation
+    // Fetch all messages since last summarisation (chat + proactive + goal guardian)
     let query = supabase
       .from('ai_logs')
       .select('user_message, ai_response, created_at')
       .eq('user_id', user_id)
-      .eq('interaction_type', 'chat')
+      .in('interaction_type', ['chat', 'proactive', 'goal_guardian'])
       .order('created_at', { ascending: true });
 
     if (lastSummarisedAt) {
@@ -477,13 +553,22 @@ const summarizeSession = async (req, res) => {
       return res.json({ success: true, message: 'No new messages to summarise' });
     }
 
-    // Convert logs to message list
+    // Convert logs to message list (handles chat, proactive, and goal_guardian formats)
     const sessionMessages = [];
     for (const log of newLogs) {
       if (log.user_message && log.user_message !== '__INIT__') {
         sessionMessages.push({ role: 'user', content: log.user_message });
       }
-      const aiMsg = log.ai_response?.message;
+      let aiMsg;
+      if (typeof log.ai_response === 'string') {
+        aiMsg = log.ai_response;
+      } else if (log.ai_response?.alert_message) {
+        aiMsg = log.ai_response.alert_message;
+      } else if (log.ai_response?.alert_user === false) {
+        aiMsg = '[Transaction approved — no concerns]';
+      } else {
+        aiMsg = log.ai_response?.message;
+      }
       if (aiMsg) sessionMessages.push({ role: 'assistant', content: aiMsg });
     }
 
@@ -499,8 +584,10 @@ const summarizeSession = async (req, res) => {
     }
 
     // Backend sets the boundary timestamp — not Gemini
+    // Strip session_summary — it's used for RAG embedding only, not stored in key_insights
+    const { session_summary: sessionSummaryForRAG, ...cumulativeData } = result.data;
     const updatedInsights = {
-      ...result.data,
+      ...cumulativeData,
       last_summarised_at: new Date().toISOString(),
     };
 
@@ -508,6 +595,34 @@ const summarizeSession = async (req, res) => {
       .from('ai_financial_profiles')
       .update({ key_insights: updatedInsights })
       .eq('user_id', user_id);
+
+    // RAG: embed the SESSION-SPECIFIC summary (not cumulative key_insights).
+    // Each session gets its own unique embedding for accurate retrieval.
+    // Runs fire-and-forget — summarisation succeeds even if embedding fails.
+    const summaryText = sessionSummaryForRAG || '';
+    if (summaryText.trim().length > 20) {
+      embedText(summaryText).then(async (vector) => {
+        if (!vector) return;
+        // Store on the LAST ai_logs row before the boundary — marks this session as embedded
+        const { data: lastLog } = await supabase
+          .from('ai_logs')
+          .select('id')
+          .eq('user_id', user_id)
+          .in('interaction_type', ['chat', 'proactive', 'goal_guardian'])
+          .lte('created_at', updatedInsights.last_summarised_at)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (lastLog) {
+          await supabase
+            .from('ai_logs')
+            .update({ session_summary: summaryText.trim(), embedding: JSON.stringify(vector) })
+            .eq('id', lastLog.id);
+          console.log(`[RAG] Session embedded on ai_logs ${lastLog.id}`);
+        }
+      }).catch(err => console.error('[RAG] Embedding failed (non-fatal):', err.message));
+    }
 
     return res.json({ success: true, last_summarised_at: updatedInsights.last_summarised_at });
 
@@ -533,6 +648,7 @@ const getMyProfile = async (req, res) => {
       { data: onboarding },
       { data: aiProfile },
       { data: allocationHistory },
+      { data: activeVaults },
     ] = await Promise.all([
       supabase.from('profiles').select('full_name, email').eq('id', user_id).single(),
       supabase.from('onboarding_profiles').select('*').eq('user_id', user_id).single(),
@@ -542,7 +658,17 @@ const getMyProfile = async (req, res) => {
         .select('*')
         .eq('user_id', user_id)
         .order('created_at', { ascending: false }),
+      supabase.from('vaults').select('name, category_key, allocation_percentage, vault_type')
+        .eq('user_id', user_id).eq('is_active', true)
+        .is('completed_at', null).eq('is_archived', false),
     ]);
+
+    // Build live allocation from active vaults only
+    const liveAllocation = {};
+    for (const v of (activeVaults || [])) {
+      liveAllocation[v.name] = v.allocation_percentage;
+    }
+    if (aiProfile) aiProfile.recommended_allocation = liveAllocation;
 
     return res.json({
       success: true,
@@ -575,9 +701,9 @@ const applyVaultPlanUpdate = async (user_id, vaultPlanUpdate) => {
       return { success: false, error: 'vault_plan_update.vaults is empty' };
     }
 
-    // Validate allocations sum to 100 (allow ±1 for floating point)
+    // Validate allocations sum to ~100 (±0.5 tolerance for Gemini rounding)
     const totalPct = newPlan.reduce((sum, v) => sum + (v.allocation_percentage || 0), 0);
-    if (Math.round(totalPct) !== 100) {
+    if (totalPct < 99.5 || totalPct > 100.5) {
       return { success: false, error: `Allocations sum to ${totalPct}, must be 100` };
     }
 
@@ -665,8 +791,75 @@ const applyVaultPlanUpdate = async (user_id, vaultPlanUpdate) => {
       previous_allocation: oldAllocationMap,
       new_allocation: newAllocationMap,
       change_reason: reasonText,
-      triggered_by: 'ai_chat',
+      triggered_by: 'conversation',
     });
+
+    // 6 — Process immediate vault balance transfers
+    const { immediate_transfers } = vaultPlanUpdate;
+    if (immediate_transfers?.length > 0) {
+      // Re-fetch vaults after plan changes (new vaults may have just been created)
+      const { data: freshVaults } = await supabase
+        .from('vaults').select('*').eq('user_id', user_id).eq('is_active', true);
+      const vaultByKey = new Map((freshVaults || []).map(v => [v.category_key, v]));
+
+      for (const transfer of immediate_transfers) {
+        const fromVault = vaultByKey.get(transfer.from_category_key);
+        const toVault   = vaultByKey.get(transfer.to_category_key);
+        if (!fromVault || !toVault) continue;
+
+        const amount = parseFloat(transfer.amount);
+        if (!amount || amount <= 0) continue;
+        if (fromVault.current_balance < amount) continue; // never overdraft
+
+        // Move balances
+        await supabase.from('vaults')
+          .update({ current_balance: fromVault.current_balance - amount })
+          .eq('id', fromVault.id);
+        await supabase.from('vaults')
+          .update({ current_balance: toVault.current_balance + amount })
+          .eq('id', toVault.id);
+
+        // Audit trail in vault_transfers
+        await supabase.from('vault_transfers').insert({
+          user_id,
+          from_vault_id: fromVault.id,
+          to_vault_id:   toVault.id,
+          amount,
+          transfer_type: 'ai_suggested',
+          reason: vaultPlanUpdate.change_reason || 'Aion advisory transfer',
+        });
+
+        // Transaction records so both vaults appear in transaction history
+        await supabase.from('transactions').insert([
+          {
+            user_id,
+            vault_id: fromVault.id,
+            amount,
+            merchant_name: `To: ${toVault.name}`,
+            merchant_category: fromVault.category_key,
+            transaction_type: 'transfer',
+            status: 'approved',
+            goal_conflict_detected: false,
+            user_overrode_guardian: false,
+            ai_categorisation_attempts: 0,
+            ai_categorisation_failed: false,
+          },
+          {
+            user_id,
+            vault_id: toVault.id,
+            amount,
+            merchant_name: `From: ${fromVault.name}`,
+            merchant_category: toVault.category_key,
+            transaction_type: 'transfer',
+            status: 'approved',
+            goal_conflict_detected: false,
+            user_overrode_guardian: false,
+            ai_categorisation_attempts: 0,
+            ai_categorisation_failed: false,
+          },
+        ]);
+      }
+    }
 
     return { success: true };
 
@@ -680,7 +873,7 @@ const applyVaultPlanUpdate = async (user_id, vaultPlanUpdate) => {
 // APPLY VAULT CHANGES
 // POST /api/ai/chat/apply-vault-changes
 // Called after user confirms vault changes via the bottom sheet.
-// Executes the vault plan update that was proposed by Aria.
+// Executes the vault plan update that was proposed by Aion.
 // ─────────────────────────────────────────────
 const applyVaultChanges = async (req, res) => {
   try {
@@ -696,11 +889,65 @@ const applyVaultChanges = async (req, res) => {
       return res.status(400).json({ success: false, message: result.error });
     }
 
-    return res.json({ success: true });
+    const completed_goals = await checkGoalCompletion(user_id);
+
+    return res.json({ success: true, completed_goals });
   } catch (error) {
     console.error('applyVaultChanges error:', error.message);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-module.exports = { onboardingChat, confirmVaults, advisoryChat, getChatHistory, summarizeSession, getMyProfile, applyVaultChanges };
+// ─────────────────────────────────────────────
+// GET LATEST NOTIFICATION
+// Returns the most recent unread proactive ai_logs row
+// ─────────────────────────────────────────────
+const getLatestNotification = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+
+    const { data, error } = await supabase
+      .from('ai_logs')
+      .select('id, ai_response, created_at')
+      .eq('user_id', user_id)
+      .eq('interaction_type', 'proactive')
+      .eq('is_proactive', true)
+      .eq('notification_read', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({ notification: data || null });
+  } catch (error) {
+    console.error('getLatestNotification error:', error.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// ─────────────────────────────────────────────
+// MARK NOTIFICATION READ
+// Sets notification_read = true for a given ai_logs id
+// ─────────────────────────────────────────────
+const markNotificationRead = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('ai_logs')
+      .update({ notification_read: true })
+      .eq('id', id)
+      .eq('user_id', user_id);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('markNotificationRead error:', error.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+module.exports = { onboardingChat, confirmVaults, advisoryChat, getChatHistory, summarizeSession, getMyProfile, applyVaultChanges, getLatestNotification, markNotificationRead };

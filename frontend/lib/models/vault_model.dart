@@ -20,6 +20,8 @@ class VaultModel {
   final String vaultIcon;
   final String? linkedGoal;
   final double? goalTargetAmount;
+  final DateTime? completedAt;
+  final bool isArchived;
 
   VaultModel({
     this.id,
@@ -34,19 +36,21 @@ class VaultModel {
     required this.vaultIcon,
     this.linkedGoal,
     this.goalTargetAmount,
+    this.completedAt,
+    this.isArchived = false,
   });
 
   // Used during onboarding — maps Gemini-returned field names
   factory VaultModel.fromJson(Map<String, dynamic> json) {
     return VaultModel(
-      name: json['name'],
-      categoryKey: json['category_key'],
-      vaultType: json['vault_type'],
-      allocationPercentage: (json['allocation_percentage'] as num).toInt(),
-      vaultColour: json['vault_colour'],
-      vaultIcon: json['vault_icon'],
-      linkedGoal: json['linked_goal'],
-      goalTargetAmount: json['goal_target_amount']?.toDouble(),
+      name: json['name'] as String? ?? 'Unnamed Vault',
+      categoryKey: json['category_key'] as String? ?? 'other',
+      vaultType: json['vault_type'] as String? ?? 'vault',
+      allocationPercentage: (json['allocation_percentage'] as num?)?.toInt() ?? 0,
+      vaultColour: json['vault_colour'] as String? ?? '#D4AF37',
+      vaultIcon: json['vault_icon'] as String? ?? '💰',
+      linkedGoal: json['linked_goal'] as String?,
+      goalTargetAmount: (json['goal_target_amount'] as num?)?.toDouble(),
     );
   }
 
@@ -65,6 +69,10 @@ class VaultModel {
       vaultIcon: json['vault_icon'],
       linkedGoal: json['linked_goal'],
       goalTargetAmount: (json['goal_target_amount'] as num?)?.toDouble(),
+      completedAt: json['completed_at'] != null
+          ? DateTime.tryParse(json['completed_at'] as String)
+          : null,
+      isArchived: json['is_archived'] as bool? ?? false,
     );
   }
 

@@ -65,6 +65,11 @@ const transferVault = async (req, res) => {
       triggered_by_transaction_id: triggered_by_transaction_id || null,
     });
 
+    const { assessProfileUpdate } = require('../services/profileUpdateService');
+    assessProfileUpdate(user_id, 'active_pilot_transfer', {
+      from: fromVault.name, to: toVault.name, amount: parseFloat(amount),
+    }).catch(() => {});
+
     return res.json({
       success: true,
       message: `RM ${parseFloat(amount).toFixed(2)} transferred from ${fromVault.name} to ${toVault.name}`,
@@ -78,4 +83,76 @@ const transferVault = async (req, res) => {
   }
 };
 
-module.exports = { transferVault };
+// ─────────────────────────────────────────────
+// ARCHIVE GOAL
+// POST /api/vaults/:id/archive
+// Hides a completed fund vault from the dashboard.
+// Only completed goals (completed_at IS NOT NULL) can be archived.
+// ─────────────────────────────────────────────
+const archiveGoal = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user_id = req.user.id;
+
+    const { data: vault, error } = await supabase
+      .from('vaults')
+      .select('vault_type, completed_at')
+      .eq('id', id)
+      .eq('user_id', user_id)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !vault) {
+      return res.status(404).json({ success: false, message: 'Vault not found' });
+    }
+    if (vault.vault_type !== 'fund') {
+      return res.status(400).json({ success: false, message: 'Only saving goals can be archived' });
+    }
+    if (!vault.completed_at) {
+      return res.status(400).json({ success: false, message: 'Only completed goals can be archived' });
+    }
+
+    await supabase.from('vaults').update({ is_archived: true }).eq('id', id);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('archiveGoal error:', error.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// ─────────────────────────────────────────────
+// UNARCHIVE GOAL
+// POST /api/vaults/:id/unarchive
+// Restores an archived goal to the dashboard.
+// ─────────────────────────────────────────────
+const unarchiveGoal = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user_id = req.user.id;
+
+    const { data: vault, error } = await supabase
+      .from('vaults')
+      .select('vault_type, is_archived')
+      .eq('id', id)
+      .eq('user_id', user_id)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !vault) {
+      return res.status(404).json({ success: false, message: 'Vault not found' });
+    }
+    if (vault.vault_type !== 'fund') {
+      return res.status(400).json({ success: false, message: 'Only saving goals can be unarchived' });
+    }
+
+    await supabase.from('vaults').update({ is_archived: false }).eq('id', id);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('unarchiveGoal error:', error.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+module.exports = { transferVault, archiveGoal, unarchiveGoal };

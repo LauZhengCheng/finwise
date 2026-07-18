@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/vault_model.dart';
+import 'auth_provider.dart';
 
 // ─────────────────────────────────────────────
 // VAULT STATE
@@ -42,8 +43,13 @@ class VaultState {
   List<VaultModel> get spendingVaults =>
       vaults.where((v) => v.vaultType == 'vault').toList();
 
+  // Active saving goals shown on dashboard — excludes archived completed goals
   List<VaultModel> get savingFunds =>
-      vaults.where((v) => v.vaultType == 'fund').toList();
+      vaults.where((v) => v.vaultType == 'fund' && !v.isArchived).toList();
+
+  // All completed goals (archived or not) — used by Achievements screen
+  List<VaultModel> get completedGoals =>
+      vaults.where((v) => v.vaultType == 'fund' && v.completedAt != null).toList();
 
   // Sum of spending vault balances only — funds are excluded
   double get totalSafeToSpend => spendingVaults.fold(0.0, (sum, v) => sum + v.currentBalance);
@@ -80,10 +86,10 @@ class VaultNotifier extends StateNotifier<VaultState> {
           .map((v) => VaultModel.fromDbJson(v as Map<String, dynamic>))
           .toList();
 
-      state = state.copyWith(vaults: vaults, isLoading: false);
+      if (mounted) state = state.copyWith(vaults: vaults, isLoading: false);
     } catch (e, st) {
       debugPrint('fetchVaults error: $e\n$st');
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (mounted) state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -99,6 +105,7 @@ class VaultNotifier extends StateNotifier<VaultState> {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'vaults',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
           callback: (_) => fetchVaults(),
         )
         .subscribe();
@@ -116,6 +123,7 @@ class VaultNotifier extends StateNotifier<VaultState> {
 // ─────────────────────────────────────────────
 // PROVIDER
 // ─────────────────────────────────────────────
-final vaultProvider = StateNotifierProvider<VaultNotifier, VaultState>(
-  (ref) => VaultNotifier(),
-);
+final vaultProvider = StateNotifierProvider<VaultNotifier, VaultState>((ref) {
+  ref.watch(authProvider);
+  return VaultNotifier();
+});

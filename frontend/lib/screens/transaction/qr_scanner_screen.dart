@@ -43,12 +43,25 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final payload =
           jsonDecode(barcode!.rawValue!) as Map<String, dynamic>;
 
+      void restart() {
+        if (mounted) {
+          setState(() => _scanned = false);
+          _controller.start();
+        }
+      }
+
       if (payload['qr_type'] == 'salary_deposit') {
-        context.push('/salary-deposit', extra: payload);
+        context.push('/salary-deposit', extra: payload).then((_) => restart());
+      } else if (payload['qr_type'] == 'general_deposit') {
+        context.push('/general-deposit', extra: payload).then((_) => restart());
+      } else if (payload['qr_type'] == 'p2p_receive') {
+        final phone = payload['phone'] as String? ?? '';
+        context.push('/transfer', extra: phone).then((_) => restart());
       } else {
-        context.push('/merchant-pay', extra: payload);
+        context.push('/merchant-pay', extra: payload).then((_) => restart());
       }
     } catch (_) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Invalid QR code — please scan a FinWise QR'),
@@ -70,6 +83,16 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
+            errorBuilder: (context, error, child) => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'Camera access denied.\nPlease enable camera permission in Settings.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+            ),
           ),
 
           // Floating back + torch row

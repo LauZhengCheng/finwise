@@ -10,10 +10,11 @@
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/message_model.dart';
+import '../../config/app_config.dart';
 
 class AiApi {
   final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.100.15:3000/api';
+  final String _baseUrl = AppConfig.baseUrl;
 
   // Get JWT token from current Supabase session
   String? get _token =>
@@ -94,7 +95,7 @@ class AiApi {
   // ─────────────────────────────────────────────
   // GET INITIAL GREETING
   // Called when onboarding screen first opens
-  // Triggers Aria to send welcome message
+  // Triggers Aion to send welcome message
   // ─────────────────────────────────────────────
   Future<Map<String, dynamic>> getInitialGreeting() async {
     try {
@@ -141,7 +142,7 @@ class AiApi {
   // SEND ADVISORY CHAT MESSAGE
   // POST /api/ai/chat
   // Returns { message, vault_created?, vault? }
-  // vault_created is true when Aria created a new vault this turn
+  // vault_created is true when Aion created a new vault this turn
   // ─────────────────────────────────────────────
   Future<Map<String, dynamic>> sendChatMessage(String message) async {
     try {
@@ -156,7 +157,7 @@ class AiApi {
       return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
       throw Exception(
-          e.response?.data?['message'] ?? 'Failed to reach Aria');
+          e.response?.data?['message'] ?? 'Failed to reach Aion');
     }
   }
 
@@ -165,9 +166,9 @@ class AiApi {
   // POST /api/ai/chat/apply-vault-changes
   // Called after user confirms vault changes via the bottom sheet.
   // ─────────────────────────────────────────────
-  Future<void> applyVaultChanges(Map<String, dynamic> vaultPlanUpdate) async {
+  Future<Map<String, dynamic>> applyVaultChanges(Map<String, dynamic> vaultPlanUpdate) async {
     try {
-      await _dio.post(
+      final response = await _dio.post(
         '$_baseUrl/ai/chat/apply-vault-changes',
         data: {'vault_plan_update': vaultPlanUpdate},
         options: Options(headers: {
@@ -175,6 +176,7 @@ class AiApi {
           'Content-Type': 'application/json',
         }),
       );
+      return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
       throw Exception(e.response?.data?['message'] ?? 'Failed to apply vault changes');
     }
@@ -216,4 +218,5 @@ class AiApi {
           e.response?.data?['message'] ?? 'Failed to load chat history');
     }
   }
+
 }

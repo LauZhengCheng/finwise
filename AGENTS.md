@@ -12,7 +12,7 @@ All financial operations use simulated/mock data.
 
 **Core Concept:** Instead of one big bank balance, users have personalised
 "vaults" (spending categories) and "funds" (saving goals). AI advisor named
-Aria monitors spending, gives real-time advice, and intervenes when needed.
+Aion monitors spending, gives real-time advice, and intervenes when needed.
 
 **Academic Context:** FYP for APU — demonstrating RAG architecture,
 agentic AI behaviour, and positive friction design for impulse spending control.
@@ -228,7 +228,7 @@ Uses `SET search_path = public` — critical for finding tables correctly.
 
 ## AI System Architecture
 
-### AI Advisor: Aria
+### AI Advisor: Aion
 Warm, natural, real financial advisor personality.
 Never robotic. Never uses system-like language.
 Always speaks as if she knows the user personally.
@@ -247,7 +247,7 @@ Always speaks as if she knows the user personally.
 
 **onboarding_profiles vs key_insights — NOT the same thing:**
 - `onboarding_profiles` = what the **user declared** about themselves (income, stated goals, life situation, risk level they chose, spending habits in their own words)
-- `key_insights` = what **Aria observed and concluded** over sessions (behavioural patterns, how user responds to advice, spending habits observed, relationship notes, session summaries)
+- `key_insights` = what **Aion observed and concluded** over sessions (behavioural patterns, how user responds to advice, spending habits observed, relationship notes, session summaries)
 - Both are always sent to Gemini on every advisory chat call — they serve different roles and are not duplicates
 
 **Session-Based Summarization:**
@@ -265,19 +265,19 @@ Always speaks as if she knows the user personally.
   "financial_patterns": ["pattern 1", "pattern 2"],
   "goals_discussed": ["goal 1", "goal 2"],
   "behavioral_notes": ["note 1", "note 2"],
-  "relationship_notes": ["note about user relationship with Aria"],
+  "relationship_notes": ["note about user relationship with Aion"],
   "last_summarised_at": "2026-06-06T10:30:00.000Z"
 }
 ```
 
 **Chat context sent to Gemini (4 layers):**
 1. `key_insights` + `onboarding_profiles` + vault balances — always included, full user understanding
-2. Recency buffer — last 10 messages (5 rows) before the session boundary — bridges conversational continuity when user briefly exits and re-enters chat. NOT for reading history — purely so Aria understands vague references like "that thing we just discussed"
+2. Recency buffer — last 10 messages (5 rows) before the session boundary — bridges conversational continuity when user briefly exits and re-enters chat. NOT for reading history — purely so Aion understands vague references like "that thing we just discussed"
 3. RAG — top 3 semantically relevant past sessions (pgvector similarity search) — **planned enhancement, not yet implemented**
 4. Current session — all messages since `last_summarised_at` — entire current session verbatim
 
 **Why recency buffer exists:**
-Without it, if a user exits chat mid-conversation and immediately re-enters, `summarizeSession()` fires and moves the session boundary. The current session becomes empty. The user says "I checked that, can you fix it?" — Aria has no idea what "that" refers to. The 10-message buffer prevents this.
+Without it, if a user exits chat mid-conversation and immediately re-enters, `summarizeSession()` fires and moves the session boundary. The current session becomes empty. The user says "I checked that, can you fix it?" — Aion has no idea what "that" refers to. The 10-message buffer prevents this.
 
 ### Context Sent Per Gemini Call Type
 | Call Type | Profile | Vault | Chat History | Transactions |
@@ -452,15 +452,15 @@ AI proactive notification about carryover surplus
 ```
 New user → /onboarding screen
         ↓
-Flutter sends __INIT__ → Aria greets warmly
+Flutter sends __INIT__ → Aion greets warmly
         ↓
 Natural conversation 8-12 exchanges
         ↓
-Aria generates personalised vault structure as JSON
+Aion generates personalised vault structure as JSON
         ↓
 Flutter shows BottomSheet vault summary
         ↓
-User can adjust → Aria modifies → shows again
+User can adjust → Aion modifies → shows again
         ↓
 User confirms → POST /api/ai/onboarding/confirm-vaults
         ↓
@@ -625,9 +625,9 @@ git push origin main
 15. No salary deposit frequency restriction — user can deposit multiple times for FYP demo flexibility
 16. Session summarization fires on chat OPEN (not on close) — avoids missed summarization from force-close; summarizes the previous session, not the current one
 17. `last_summarised_at` is injected by backend after Gemini returns — Gemini never sets timestamps
-18. Profile screen is read-only — 3 sections: what user declared, what Aria concluded, allocation history timeline
-19. ALL vault changes after onboarding go through Aria in the advisory chat — no manual UI for vault editing
-20. Vault changes in chat use a 2-step confirmation flow: Aria proposes specific changes → user confirms explicitly → backend executes via `applyVaultPlanUpdate`
+18. Profile screen is read-only — 3 sections: what user declared, what Aion concluded, allocation history timeline
+19. ALL vault changes after onboarding go through Aion in the advisory chat — no manual UI for vault editing
+20. Vault changes in chat use a 2-step confirmation flow: Aion proposes specific changes → user confirms explicitly → backend executes via `applyVaultPlanUpdate`
 21. `applyVaultPlanUpdate` syncs the full vault plan: update existing, create new, soft-delete removed (is_active=false, never hard-delete — transaction history preserved)
 22. Vault changes include: create, delete, rename, change allocation %, temporary rebalance — all handled by the same `vault_plan_update` response field
 23. Temporary changes use `is_temporary: true` in `vault_plan_update` — stored in allocation_history change_reason with [TEMPORARY] prefix for future revert reference
@@ -767,17 +767,17 @@ Salary: Simulated Employer Sdn Bhd (qr_type: salary_deposit)
 ---
 
 ### Week 5 — Module 4: AI Advisory Chat + Proactive Notifications
-**Goal:** User can chat with Aria anytime and receives proactive advice.
+**Goal:** User can chat with Aion anytime and receives proactive advice.
 
 **Part 1 — AI Advisory Chat: ✅ COMPLETE**
 - chat_screen.dart — WhatsApp-style persistent conversation, full history always visible
 - Session-aware context — 4-layer Gemini context (key_insights + recency buffer 10 msgs + current session; RAG layer planned)
 - `summarizeSession()` fires on chat open — summarizes previous session into key_insights
-- Date dividers between days, typing indicator "Aria is thinking...", empty state for new users
+- Date dividers between days, typing indicator "Aion is thinking...", empty state for new users
 - Reuses ChatBubble and ChatInput widgets from onboarding
 - Routes: POST /api/ai/chat, GET /api/ai/chat/history, POST /api/ai/chat/summarize, POST /api/ai/chat/apply-vault-changes
 - aiController: advisoryChat(), getChatHistory(), summarizeSession(), applyVaultChanges()
-- Vault confirmation bottom sheet: Aria returns vault_plan_update → Flutter shows bottom sheet with NEW/UPDATED/DELETED badges → user taps Confirm → POST /api/ai/chat/apply-vault-changes → vaults refresh. Swipe away = nothing applied.
+- Vault confirmation bottom sheet: Aion returns vault_plan_update → Flutter shows bottom sheet with NEW/UPDATED/DELETED badges → user taps Confirm → POST /api/ai/chat/apply-vault-changes → vaults refresh. Swipe away = nothing applied.
 
 **Part 2 — Proactive Notifications: ⏳ DEFERRED**
 - Firebase Cloud Messaging setup for background push notifications
@@ -791,8 +791,8 @@ Salary: Simulated Employer Sdn Bhd (qr_type: salary_deposit)
 
 **Part 3 — My Financial Profile Screen: ✅ COMPLETE**
 - profile_screen.dart — 3 sections:
-  - "What You Told Aria" — monthly budget, life situation, spending habit, risk level, challenges, goals list
-  - "What Aria Knows" — behavioural classification badge (colour-coded), key_insights notes, recommended allocation bars
+  - "What You Told Aion" — monthly budget, life situation, spending habit, risk level, challenges, goals list
+  - "What Aion Knows" — behavioural classification badge (colour-coded), key_insights notes, recommended allocation bars
   - "Allocation History" — vertical timeline with date, reason, triggered-by, allocation chips
 - Route: GET /api/ai/profile → aiController.getMyProfile()
 - Financial Profile accessed by tapping first name on dashboard (context.push — no nav bar shown)

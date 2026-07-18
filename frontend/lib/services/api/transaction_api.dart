@@ -9,10 +9,11 @@
 
 import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../config/app_config.dart';
 
 class TransactionApi {
   final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.100.15:3000/api';
+  final String _baseUrl = AppConfig.baseUrl;
 
   String? get _token =>
       Supabase.instance.client.auth.currentSession?.accessToken;
@@ -39,7 +40,9 @@ class TransactionApi {
       );
       return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
-      throw Exception(e.response?.data?['message'] ?? 'Categorisation failed');
+      final d = e.response?.data;
+      final msg = (d is Map ? (d['message'] ?? d['error']) : null) as String?;
+      throw Exception(msg ?? 'Categorisation failed (${e.response?.statusCode ?? 'no response'})');
     }
   }
 
@@ -99,12 +102,11 @@ class TransactionApi {
   // GET /api/transactions/history
   // Returns all transactions for the user, newest first
   // ─────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> getHistory() async {
+  Future<List<Map<String, dynamic>>> getHistory({String? vaultId}) async {
     try {
-      final response = await _dio.get(
-        '$_baseUrl/transactions/history',
-        options: _auth,
-      );
+      String url = '$_baseUrl/transactions/history';
+      if (vaultId != null) url += '?vault_id=$vaultId';
+      final response = await _dio.get(url, options: _auth);
       final raw = response.data['transactions'] as List<dynamic>;
       return raw.cast<Map<String, dynamic>>();
     } on DioException catch (e) {

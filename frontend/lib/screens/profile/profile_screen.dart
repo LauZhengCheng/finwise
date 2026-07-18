@@ -2,7 +2,7 @@
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : profile_screen.dart
 // Description   : My Financial Profile — read-only screen showing
-//                 what the user declared and what Aria concluded
+//                 what the user declared and what Aion concluded
 // First Written : 06-06-2026
 // Edited on     : 06-06-2026
 // ============================================
@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import '../../config/app_theme.dart';
 import '../../services/api/ai_api.dart';
+import '../../widgets/shimmer_loading.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -32,11 +33,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     try {
       final data = await AiApi().getMyProfile();
+      if (!mounted) return;
       setState(() {
         _data = data;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
@@ -98,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               Expanded(
                 child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+                  ? const Padding(padding: EdgeInsets.all(16), child: SkeletonTransactionList(count: 4))
                   : _error != null
                       ? _buildError()
                       : _buildContent(),
@@ -140,10 +143,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
       children: [
-        // ── Section 1: What you told Aria ──────────
+        // ── Section 1: What you told Aion ──────────
         const _SectionHeader(
           icon: Icons.person_rounded,
-          title: 'What You Told Aria',
+          title: 'What You Told Aion',
           subtitle: 'Your declarations during setup',
         ),
         const SizedBox(height: 12),
@@ -171,10 +174,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
         ],
 
-        // ── Section 2: What Aria concluded ─────────
+        // ── Section 2: What Aion concluded ─────────
         const _SectionHeader(
           icon: Icons.psychology_rounded,
-          title: 'What Aria Knows',
+          title: 'What Aion Knows',
           subtitle: 'AI observations from your behaviour',
         ),
         const SizedBox(height: 12),
@@ -199,14 +202,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const _SectionHeader(
           icon: Icons.history_rounded,
           title: 'Allocation History',
-          subtitle: 'How Aria\'s recommendations evolved',
+          subtitle: 'How Aion\'s recommendations evolved',
         ),
         const SizedBox(height: 12),
         _HistoryTimeline(entries: history, formatDate: _formatDate),
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            'All changes are AI-driven — chat with Aria to adjust',
+            'This is how Aion sees you — does it reflect who you truly are?',
             style: TextStyle(fontSize: 11, color: AppTheme.textHint),
           ),
         ),
@@ -443,7 +446,7 @@ class _ClassificationCard extends StatelessWidget {
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
-              'Aria\'s behavioural classification based on your transaction patterns',
+              'Aion\'s behavioural classification based on your transaction patterns',
               style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ),
@@ -493,7 +496,7 @@ class _KeyInsightsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Aria\'s Notes About You',
+          const Text('Aion\'s Notes About You',
               style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
@@ -589,7 +592,7 @@ class _AllocationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Recommended Allocation',
+          const Text('Allocation Percentage',
               style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
@@ -804,9 +807,9 @@ class _TimelineEntry extends StatelessWidget {
       case 'onboarding':
         return 'Onboarding';
       case 'ai_chat':
-        return 'Chat with Aria';
+        return 'Chat with Aion';
       case 'ai_analysis':
-        return 'Aria background analysis';
+        return 'Aion background analysis';
       default:
         return raw.replaceAll('_', ' ');
     }

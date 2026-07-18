@@ -2,7 +2,7 @@
 // Programmer    : Lau Zheng Cheng (TP071393)
 // Program Name  : chat_screen.dart
 // Description   : AI Advisory Chat screen — persistent WhatsApp-style
-//                 conversation with Aria. Full history always visible.
+//                 conversation with Aion. Full history always visible.
 // First Written : 06-06-2026
 // Edited on     : 11-06-2026
 // ============================================
@@ -15,9 +15,19 @@ import '../../config/app_theme.dart';
 import '../../models/message_model.dart';
 import '../../models/vault_model.dart';
 import '../../providers/vault_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../services/api/ai_api.dart';
+import '../../services/api/notification_api.dart';
+import '../../services/api/transfer_api.dart';
 import '../onboarding/widgets/chat_bubble.dart';
 import '../onboarding/widgets/chat_input.dart';
+import '../../widgets/shimmer_loading.dart';
+import '../../widgets/goal_celebration_overlay.dart';
+
+// Persists across navigation — cleared only after successful deposit confirmation.
+// Allows the user to leave chat (e.g. check dashboard) and return to still confirm.
+final pendingTransferAllocationProvider =
+    StateProvider<Map<String, dynamic>?>((ref) => null);
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -51,8 +61,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // This ensures key_insights and the session boundary are up to date
   // before the user sends their first message.
   Future<void> _initChat() async {
+    // Mark notifications as seen when entering chat — await before refreshing
+    await NotificationApi().markChatOpened();
+    if (!mounted) return;
+    ref.read(notificationProvider.notifier).fetch();
+
     await AiApi().summarizeSession();
+    if (!mounted) return;
     await _loadHistory();
+    if (!mounted) return;
+    // Re-show allocation sheet if user navigated away before confirming
+    final pending = ref.read(pendingTransferAllocationProvider);
+    if (pending != null && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showTransferAllocationSheet(pending);
+      });
+    }
   }
 
   @override
@@ -64,6 +88,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _loadHistory() async {
     try {
       final raw = await AiApi().getChatHistory();
+      if (!mounted) return;
       final loaded = raw.map((m) => MessageModel(
             content: m['content'] as String,
             isUser: m['is_user'] as bool,
@@ -76,6 +101,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       });
       // No scroll call needed — initialScrollOffset: 999999 clamps to bottom on first attach.
     } catch (_) {
+      if (!mounted) return;
       setState(() => _isHistoryLoading = false);
     }
   }
@@ -108,11 +134,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _shouldAnimateLastMessage = true;
       });
 
-      // Aria proposed vault changes — show confirmation bottom sheet
+      // Notifications are now "replied" — refresh so dashboard card clears
+      ref.read(notificationProvider.notifier).fetch();
+
+      // Aion proposed vault changes — show confirmation bottom sheet
       if (response['vault_plan_update'] != null && mounted) {
         _showVaultConfirmationSheet(
           response['vault_plan_update'] as Map<String, dynamic>,
         );
+      }
+
+      // Aion confirmed transfer allocation — persist and show deposit confirmation sheet
+      if (response['transfer_allocation'] != null && mounted) {
+        final allocation = response['transfer_allocation'] as Map<String, dynamic>;
+        ref.read(pendingTransferAllocationProvider.notifier).state = allocation;
+        _showTransferAllocationSheet(allocation);
       }
     } catch (e) {
       setState(() {
@@ -166,6 +202,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .cast<Map<String, dynamic>>();
     final isTemporary = vaultPlanUpdate['is_temporary'] as bool? ?? false;
     final changeReason = vaultPlanUpdate['change_reason'] as String? ?? '';
+    final immediateTransfers = (vaultPlanUpdate['immediate_transfers'] as List<dynamic>?)
+        ?.cast<Map<String, dynamic>>() ?? [];
 
     final currentKeyMap = {for (final v in currentVaults) v.categoryKey: v};
     final newKeySet = newPlan.map((v) => v['category_key'] as String).toSet();
@@ -188,18 +226,101 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (_) => _VaultChangesSheet(
         newVaults: newVaults,
         updatedVaults: updatedVaults,
         deletedVaults: deletedVaults,
+        immediateTransfers: immediateTransfers,
         currentKeyMap: currentKeyMap,
         isTemporary: isTemporary,
         changeReason: changeReason,
         onConfirm: () async {
-          await AiApi().applyVaultChanges(vaultPlanUpdate);
+          final result = await AiApi().applyVaultChanges(vaultPlanUpdate);
           ref.read(vaultProvider.notifier).fetchVaults();
+          final completedGoals = result['completed_goals'] as List<dynamic>? ?? [];
+          for (final goal in completedGoals) {
+            if (!mounted) break;
+            await GoalCelebrationOverlay.show(
+              context,
+              vaultName: goal['vault_name'] as String,
+              goalTargetAmount: (goal['goal_target_amount'] as num).toDouble(),
+              allocationPercentage: (goal['allocation_percentage'] as num?)?.toInt() ?? 0,
+            );
+          }
+          // Already on chat screen — no navigation needed regardless of result
         },
+      ),
+    );
+  }
+
+  // Shows bottom sheet for receiver to confirm depositing received money into a vault.
+  void _showTransferAllocationSheet(Map<String, dynamic> allocation) {
+    final rawIds = allocation['transfer_ids'] as List<dynamic>?;
+    if (rawIds == null || rawIds.isEmpty) return;
+    final transferIds = rawIds.cast<String>();
+    final vaultId = allocation['suggested_vault_id'] as String? ?? '';
+    if (vaultId.isEmpty) return;
+    final vaultName = allocation['suggested_vault_name'] as String? ?? 'your vault';
+    final amount = (allocation['total_amount'] as num? ?? allocation['amount'] as num? ?? 0).toDouble();
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surfaceColor,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.glassBorderColor, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.12), shape: BoxShape.circle),
+              child: const Icon(Icons.move_to_inbox_rounded, color: AppTheme.primaryColor, size: 28),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Deposit RM ${amount.toStringAsFixed(2)}',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'into $vaultName?',
+              style: const TextStyle(fontSize: 16, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 28),
+            _AllocationConfirmButton(
+              transferIds: transferIds,
+              vaultId: vaultId,
+              onSuccess: () {
+                ref.read(pendingTransferAllocationProvider.notifier).state = null;
+                Navigator.pop(context);
+                ref.read(vaultProvider.notifier).fetchVaults();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('RM ${amount.toStringAsFixed(2)} deposited into $vaultName'),
+                    backgroundColor: const Color(0xFF4CAF50),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Not now', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -310,7 +431,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Aria',
+                'Aion',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -331,8 +452,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildMessageList() {
     if (_isHistoryLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.primaryColor),
+      return const SingleChildScrollView(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: SkeletonChatHistory(),
       );
     }
 
@@ -384,7 +506,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           padding: EdgeInsets.only(
             top: 12,
             // 96px clears the floating pill height so last message is never hidden.
-            // Gap padding is added on top of that while Aria is replying.
+            // Gap padding is added on top of that while Aion is replying.
             bottom: _showGap ? constraints.maxHeight * 0.5 : 96,
           ),
           children: children,
@@ -414,7 +536,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Hi, I\'m Aria',
+              'Hi, I\'m Aion',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -573,6 +695,7 @@ class _VaultChangesSheet extends StatefulWidget {
   final List<Map<String, dynamic>> newVaults;
   final List<Map<String, dynamic>> updatedVaults;
   final List<VaultModel> deletedVaults;
+  final List<Map<String, dynamic>> immediateTransfers;
   final Map<String, VaultModel> currentKeyMap;
   final bool isTemporary;
   final String changeReason;
@@ -582,6 +705,7 @@ class _VaultChangesSheet extends StatefulWidget {
     required this.newVaults,
     required this.updatedVaults,
     required this.deletedVaults,
+    required this.immediateTransfers,
     required this.currentKeyMap,
     required this.isTemporary,
     required this.changeReason,
@@ -661,12 +785,40 @@ class _VaultChangesSheetState extends State<_VaultChangesSheet> {
             ),
           ],
           const SizedBox(height: 16),
-          if (!hasChanges)
+          if (!hasChanges && widget.immediateTransfers.isEmpty)
             const Text(
               'No changes detected.',
               style: TextStyle(color: AppTheme.textSecondary),
             )
           else ...[
+            if (widget.immediateTransfers.isNotEmpty) ...[
+              const Text(
+                'BALANCE TRANSFERS (happen now)',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppTheme.primaryColor),
+              ),
+              const SizedBox(height: 8),
+              ...widget.immediateTransfers.map((t) {
+                final from = t['from_category_key'] as String? ?? '';
+                final to   = t['to_category_key'] as String? ?? '';
+                final amt  = (t['amount'] as num? ?? 0).toDouble();
+                final fromName = widget.currentKeyMap[from]?.name ?? from;
+                final toName   = widget.currentKeyMap[to]?.name ?? to;
+                return _ChangeTile(
+                  label: 'RM ${amt.toStringAsFixed(2)}',
+                  badge: 'MOVE',
+                  badgeColor: AppTheme.primaryColor,
+                  detail: '$fromName → $toName',
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
+            if (hasChanges) ...[
+              const Text(
+                'ALLOCATION CHANGES (future income)',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 8),
+            ],
             ...widget.newVaults.map((v) => _ChangeTile(
                   label: v['name'] as String,
                   badge: 'NEW',
@@ -838,6 +990,65 @@ class _ChangeTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Transfer Allocation Confirm Button ───────
+class _AllocationConfirmButton extends StatefulWidget {
+  final List<String> transferIds;
+  final String vaultId;
+  final VoidCallback onSuccess;
+
+  const _AllocationConfirmButton({
+    required this.transferIds,
+    required this.vaultId,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_AllocationConfirmButton> createState() => _AllocationConfirmButtonState();
+}
+
+class _AllocationConfirmButtonState extends State<_AllocationConfirmButton> {
+  bool _isConfirming = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _isConfirming
+            ? null
+            : () async {
+                setState(() => _isConfirming = true);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await TransferApi().allocateTransfer(
+                    transferIds: widget.transferIds,
+                    vaultId: widget.vaultId,
+                  );
+                  widget.onSuccess();
+                } catch (e) {
+                  if (mounted) {
+                    setState(() => _isConfirming = false);
+                    messenger.showSnackBar(SnackBar(
+                      content: Text(e.toString().replaceFirst('Exception: ', '')),
+                      backgroundColor: AppTheme.errorColor,
+                    ));
+                  }
+                }
+              },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        child: _isConfirming
+            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5))
+            : const Text('Confirm Deposit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
       ),
     );
   }

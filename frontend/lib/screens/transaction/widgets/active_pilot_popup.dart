@@ -351,6 +351,27 @@ class _ActivePilotPopupState extends ConsumerState<ActivePilotPopup> {
                           ),
                         ),
                       ],
+                      // AI-driven warnings (bills, debts, emergency fund)
+                      if (vault['warnings'] != null)
+                        ...(vault['warnings'] as List<dynamic>).map((w) =>
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded,
+                                    size: 11,
+                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.7)),
+                                const SizedBox(width: 4),
+                                Flexible(child: Text(
+                                  w as String,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: const Color(0xFFF59E0B).withValues(alpha: 0.8)),
+                                )),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
