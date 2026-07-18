@@ -1,0 +1,22 @@
+# ============================================
+# Programmer    : Lau Zheng Cheng (TP071393)
+# Program Name  : .gcloudignore
+# Description   : Controls what gets uploaded to Cloud Build when
+#                 running `gcloud run deploy --source .`. Separate
+#                 from .dockerignore, which only controls what goes
+#                 INTO the built image — this controls what leaves
+#                 the local machine in the first place.
+# First Written : 19-07-2026
+# Edited on     : 19-07-2026
+# ============================================
+
+.gcloudignore
+.git
+.gitignore
+node_modules/
+__tests__/
+*.md
+.env
+.env.*
+*firebase-adminsdk*.json
+env.yaml
