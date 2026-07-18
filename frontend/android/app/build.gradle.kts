@@ -51,6 +51,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Separate app ID so debug and release installs coexist on the
+            // same device without Android's signature-mismatch conflict.
+            applicationIdSuffix = ".debug"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
         }

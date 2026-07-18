@@ -4,4 +4,8 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Distinguishes the debug install from the release app on the home
+         screen — merged with src/main/AndroidManifest.xml at build time. -->
+    <application android:label="FinWise_dev" />
 </manifest>
