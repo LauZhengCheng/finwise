@@ -144,3 +144,6 @@ backend/*firebase-adminsdk*.json
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Cloud Run deployment env — contains secrets, never commit
+backend/env.yaml
