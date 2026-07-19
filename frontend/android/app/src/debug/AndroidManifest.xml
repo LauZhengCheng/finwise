@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- The INTERNET permission is required for development. Specifically,
          the Flutter tool needs it to communicate with the running application
          to allow setting breakpoints, to provide hot reload, etc.
@@ -6,6 +7,11 @@
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Distinguishes the debug install from the release app on the home
-         screen — merged with src/main/AndroidManifest.xml at build time. -->
-    <application android:label="FinWise_dev" />
+         screen — merged with src/main/AndroidManifest.xml at build time.
+         tools:replace is required since android:label already exists in
+         the main manifest — without it, the merger treats this as a
+         conflict rather than an intentional override. -->
+    <application
+        android:label="FinWise_dev"
+        tools:replace="android:label" />
 </manifest>
